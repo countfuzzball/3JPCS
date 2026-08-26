@@ -1,6 +1,10 @@
 export interface EditorElements {
   readonly newProjectButton: HTMLButtonElement;
   readonly fitButton: HTMLButtonElement;
+  readonly undoButton: HTMLButtonElement;
+  readonly redoButton: HTMLButtonElement;
+  readonly toolButtons: readonly HTMLButtonElement[];
+  readonly toolInstructions: HTMLElement;
   readonly dialog: HTMLDialogElement;
   readonly projectForm: HTMLFormElement;
   readonly projectName: HTMLInputElement;
@@ -13,9 +17,14 @@ export interface EditorElements {
   readonly layerTerrain: HTMLInputElement;
   readonly layerHillshade: HTMLInputElement;
   readonly layerContours: HTMLInputElement;
+  readonly layerPlaces: HTMLInputElement;
+  readonly layerLandUse: HTMLInputElement;
+  readonly layerRoads: HTMLInputElement;
+  readonly layerHedgerows: HTMLInputElement;
   readonly projectTitle: HTMLElement;
   readonly dirtyMarker: HTMLElement;
   readonly projectState: HTMLElement;
+  readonly inspectorTitle: HTMLElement;
   readonly inspector: HTMLElement;
   readonly statusCoordinates: HTMLElement;
   readonly statusElevation: HTMLElement;
@@ -40,6 +49,9 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
           <button class="button" type="button" disabled title="Project opening is delivered in Milestone 4">Open</button>
           <button class="button" type="button" disabled title="Project saving is delivered in Milestone 4">Save</button>
           <span class="command-divider"></span>
+          <button id="undo" class="button" type="button" disabled><span class="keycap">Ctrl Z</span> Undo</button>
+          <button id="redo" class="button" type="button" disabled><span class="keycap">Ctrl Y</span> Redo</button>
+          <span class="command-divider"></span>
           <button id="fit-terrain" class="button" type="button" disabled><span class="keycap">F</span> Fit terrain</button>
         </nav>
         <div id="project-state" class="project-state"><span class="state-dot"></span>No project</div>
@@ -47,12 +59,30 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
 
       <section class="workspace">
         <aside class="panel panel-left">
-          <section class="panel-section">
-            <div class="section-heading"><span>01</span><h2>Authoring</h2></div>
-            <button class="tool-button is-active" type="button" disabled>
-              <span class="tool-symbol">↖</span><span><strong>Inspect terrain</strong><small>Navigation mode</small></span><kbd>V</kbd>
-            </button>
-            <p class="milestone-note">Geometry and object tools unlock in Milestone 2. Terrain navigation is fully active.</p>
+          <section class="panel-section authoring-section">
+            <div class="section-heading"><span>01</span><h2>Authoring tools</h2></div>
+            <div class="tool-stack" role="toolbar" aria-label="Geometry authoring tools">
+              ${toolButton("select", "↖", "Select / move", "V")}
+              <p class="tool-group-label">Place regions</p>
+              <div class="tool-grid">
+                ${toolButton("place:town", "T", "Town")}
+                ${toolButton("place:village", "V", "Village")}
+                ${toolButton("place:farm", "F", "Farm")}
+                ${toolButton("place:military_area", "M", "Military")}
+              </div>
+              <p class="tool-group-label">Land use</p>
+              <div class="tool-grid">
+                ${toolButton("land:pasture", "P", "Pasture")}
+                ${toolButton("land:rough_grazing", "R", "Rough grazing")}
+                ${toolButton("land:woodland", "W", "Woodland")}
+              </div>
+              <p class="tool-group-label">Network</p>
+              <div class="tool-grid">
+                ${toolButton("road", "━", "Road")}
+                ${toolButton("hedgerow", "┄", "Hedgerow")}
+              </div>
+            </div>
+            <p id="tool-instructions" class="milestone-note">Create a terrain project to enable geometry authoring.</p>
           </section>
           <section class="panel-section layers-section">
             <div class="section-heading"><span>02</span><h2>Terrain layers</h2></div>
@@ -60,12 +90,21 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
             ${layerToggle("layer-hillshade", "Hillshade", "Northwest lighting", "hillshade-swatch")}
             ${layerToggle("layer-contours", "Contours", "Adaptive metre interval", "contour-swatch")}
           </section>
+          <section class="panel-section layers-section">
+            <div class="section-heading"><span>03</span><h2>Authored layers</h2></div>
+            ${layerToggle("layer-places", "Place regions", "Town, village, farm, military", "places-swatch")}
+            ${layerToggle("layer-land-use", "Land use", "Pasture, grazing, woodland", "land-use-swatch")}
+            ${layerToggle("layer-roads", "Native roads", "World-width geometry", "roads-swatch")}
+            ${layerToggle("layer-hedgerows", "Hedgerows", "Editable control lines", "hedgerows-swatch")}
+          </section>
           <section class="panel-section navigation-help">
-            <div class="section-heading"><span>03</span><h2>Navigate</h2></div>
+            <div class="section-heading"><span>04</span><h2>Shortcuts</h2></div>
             <dl>
-              <div><dt>Zoom</dt><dd>Mouse wheel at cursor</dd></div>
-              <div><dt>Pan</dt><dd>Middle or right drag</dd></div>
-              <div><dt>Fit</dt><dd><kbd>F</kbd></dd></div>
+              <div><dt>Finish / cancel</dt><dd><kbd>Enter</kbd> / <kbd>Esc</kbd></dd></div>
+              <div><dt>Draft point</dt><dd><kbd>Backspace</kbd></dd></div>
+              <div><dt>Delete</dt><dd><kbd>Delete</kbd></dd></div>
+              <div><dt>Vertex delete</dt><dd><kbd>Shift Delete</kbd></dd></div>
+              <div><dt>Pan</dt><dd>Middle/right drag</dd></div>
             </dl>
           </section>
         </aside>
@@ -88,7 +127,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         <aside class="panel panel-right">
           <section class="panel-section inspector-header">
             <p class="eyebrow">CURRENT SELECTION</p>
-            <h2>Terrain reference</h2>
+            <h2 id="inspector-title">Terrain reference</h2>
           </section>
           <section id="inspector" class="inspector-empty">
             <div class="inspector-placeholder"></div>
@@ -110,7 +149,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         <div class="status-metric"><span>X / Z</span><strong id="status-coordinates">—</strong></div>
         <div class="status-metric"><span>ELEVATION</span><strong id="status-elevation">—</strong></div>
         <div class="status-metric"><span>SLOPE</span><strong id="status-slope">—</strong></div>
-        <div class="status-build">MILESTONES 0–1</div>
+        <div class="status-build">MILESTONES 0–2</div>
       </footer>
     </main>
 
@@ -155,6 +194,10 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
   return {
     newProjectButton,
     fitButton: byId("fit-terrain", HTMLButtonElement),
+    undoButton: byId("undo", HTMLButtonElement),
+    redoButton: byId("redo", HTMLButtonElement),
+    toolButtons: [...document.querySelectorAll<HTMLButtonElement>("[data-tool]")],
+    toolInstructions: byId("tool-instructions", HTMLElement),
     dialog: byId("new-project-dialog", HTMLDialogElement),
     projectForm: byId("new-project-form", HTMLFormElement),
     projectName: byId("project-name", HTMLInputElement),
@@ -167,9 +210,14 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     layerTerrain: byId("layer-terrain", HTMLInputElement),
     layerHillshade: byId("layer-hillshade", HTMLInputElement),
     layerContours: byId("layer-contours", HTMLInputElement),
+    layerPlaces: byId("layer-places", HTMLInputElement),
+    layerLandUse: byId("layer-land-use", HTMLInputElement),
+    layerRoads: byId("layer-roads", HTMLInputElement),
+    layerHedgerows: byId("layer-hedgerows", HTMLInputElement),
     projectTitle: byId("project-title", HTMLElement),
     dirtyMarker: byId("dirty-marker", HTMLElement),
     projectState: byId("project-state", HTMLElement),
+    inspectorTitle: byId("inspector-title", HTMLElement),
     inspector: byId("inspector", HTMLElement),
     statusCoordinates: byId("status-coordinates", HTMLElement),
     statusElevation: byId("status-elevation", HTMLElement),
@@ -177,6 +225,13 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     statusMessage: byId("status-message", HTMLElement),
     viewReadout: byId("view-readout", HTMLElement),
   };
+}
+
+function toolButton(tool: string, symbol: string, label: string, shortcut = ""): string {
+  return `
+    <button class="tool-button${tool === "select" ? " is-active" : ""}" data-tool="${tool}" type="button" aria-pressed="${tool === "select" ? "true" : "false"}" disabled>
+      <span class="tool-symbol">${symbol}</span><strong>${label}</strong>${shortcut ? `<kbd>${shortcut}</kbd>` : ""}
+    </button>`;
 }
 
 function layerToggle(id: string, title: string, detail: string, swatchClass: string): string {

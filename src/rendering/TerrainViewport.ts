@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { PointXZ } from "../model/coordinates";
+import type { ProjectModel } from "../model/ProjectModel";
 import type { TerrainReference } from "../terrain/TerrainReference";
 import {
   fitOrthographicView,
@@ -12,10 +13,27 @@ import {
 } from "../interaction/orthographicMath";
 import { buildTerrainGeometry } from "./terrain/terrainGeometry";
 import { buildTerrainTexture, type TerrainLayerState } from "./terrain/terrainTexture";
+import { GeometryRenderAdapter, type DraftProjection } from "./GeometryRenderAdapter";
+import type { GeometryLayerState } from "../interaction/geometryEditing";
+
+export interface PrimaryPointerIntent {
+  readonly point: PointXZ;
+  readonly ctrlKey: boolean;
+  readonly shiftKey: boolean;
+}
+
+export interface CanvasClickIntent extends PrimaryPointerIntent {
+  readonly detail: number;
+}
 
 export interface TerrainViewportCallbacks {
   readonly onPointerWorld: (point: PointXZ | null) => void;
   readonly onViewChanged: (view: OrthographicView) => void;
+  readonly onPrimaryDown: (intent: PrimaryPointerIntent) => void;
+  readonly onPrimaryMove: (point: PointXZ) => void;
+  readonly onPrimaryUp: (point: PointXZ) => void;
+  readonly onCanvasClick: (intent: CanvasClickIntent) => void;
+  readonly onCanvasDoubleClick: (point: PointXZ) => void;
 }
 
 export class TerrainViewport {
@@ -25,6 +43,7 @@ export class TerrainViewport {
   readonly #camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1_000_000);
   readonly #resizeObserver: ResizeObserver;
   readonly #callbacks: TerrainViewportCallbacks;
+  readonly #geometry = new GeometryRenderAdapter();
   #terrain: TerrainReference | null = null;
   #terrainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null;
   #border: THREE.LineLoop | null = null;
@@ -33,6 +52,7 @@ export class TerrainViewport {
   #fitHeightM = 1;
   #animationFrame: number | null = null;
   #pan: { readonly pointerId: number; readonly x: number; readonly y: number } | null = null;
+  #primaryPointerId: number | null = null;
 
   public constructor(host: HTMLElement, callbacks: TerrainViewportCallbacks) {
     this.#host = host;
@@ -46,6 +66,7 @@ export class TerrainViewport {
 
     this.#camera.up.set(0, 0, -1);
     this.#scene.add(new THREE.AmbientLight(0xffffff, 1));
+    this.#scene.add(this.#geometry.group);
     this.#bindEvents();
     this.#resizeObserver = new ResizeObserver(() => this.#resize());
     this.#resizeObserver.observe(this.#host);
@@ -74,6 +95,30 @@ export class TerrainViewport {
       this.#terrainMesh.material.needsUpdate = true;
     }
     this.invalidate();
+  }
+
+  public setAuthoringProjection(
+    model: ProjectModel | null,
+    selectedId: string | null,
+    selectedVertex: number | null,
+    layers: GeometryLayerState,
+    draft: DraftProjection,
+  ): void {
+    const terrain = this.#terrain;
+    const overlayY = terrain
+      ? terrain.maximumElevationM + Math.max(1, (terrain.maximumElevationM - terrain.minimumElevationM) * 0.01)
+      : 1;
+    this.#geometry.sync(model?.geometryEntities() ?? [], selectedId, selectedVertex, layers, draft, overlayY);
+    this.invalidate();
+  }
+
+  public worldUnitsPerPixel(): number {
+    return this.#view.heightM / this.#size().heightPx;
+  }
+
+  public setDrawingCursor(drawing: boolean): void {
+    this.#renderer.domElement.classList.toggle("is-drawing", drawing);
+    this.#renderer.domElement.classList.toggle("is-selecting", !drawing);
   }
 
   public fitTerrain(): void {
@@ -105,6 +150,8 @@ export class TerrainViewport {
       cancelAnimationFrame(this.#animationFrame);
     }
     this.#disposeTerrain();
+    this.#geometry.dispose();
+    this.#scene.remove(this.#geometry.group);
     this.#renderer.dispose();
     this.#renderer.domElement.remove();
   }
@@ -136,6 +183,14 @@ export class TerrainViewport {
         canvas.setPointerCapture(event.pointerId);
         this.#pan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
         canvas.classList.add("is-panning");
+      } else if (event.button === 0 && this.#terrain) {
+        canvas.setPointerCapture(event.pointerId);
+        this.#primaryPointerId = event.pointerId;
+        this.#callbacks.onPrimaryDown({
+          point: this.#worldAt(this.#localPointer(event)),
+          ctrlKey: event.ctrlKey || event.metaKey,
+          shiftKey: event.shiftKey,
+        });
       }
     });
     canvas.addEventListener("pointermove", (event) => {
@@ -145,6 +200,8 @@ export class TerrainViewport {
         this.#pan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
         this.#updateCamera();
         this.#callbacks.onViewChanged(this.#view);
+      } else if (this.#primaryPointerId === event.pointerId) {
+        this.#callbacks.onPrimaryMove(this.#worldAt(this.#localPointer(event)));
       }
       this.#emitPointerWorld(this.#localPointer(event));
     });
@@ -156,13 +213,32 @@ export class TerrainViewport {
           canvas.releasePointerCapture(event.pointerId);
         }
       }
+      if (this.#primaryPointerId === event.pointerId) {
+        this.#callbacks.onPrimaryUp(this.#worldAt(this.#localPointer(event)));
+        this.#primaryPointerId = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      }
     };
     canvas.addEventListener("pointerup", endPan);
     canvas.addEventListener("pointercancel", endPan);
     canvas.addEventListener("pointerleave", () => {
-      if (!this.#pan) {
+      if (!this.#pan && this.#primaryPointerId === null) {
         this.#callbacks.onPointerWorld(null);
       }
+    });
+    canvas.addEventListener("click", (event) => {
+      if (event.button !== 0 || !this.#terrain) return;
+      this.#callbacks.onCanvasClick({
+        point: this.#worldAt(this.#localPointer(event)),
+        detail: event.detail,
+        ctrlKey: event.ctrlKey || event.metaKey,
+        shiftKey: event.shiftKey,
+      });
+    });
+    canvas.addEventListener("dblclick", (event) => {
+      if (event.button !== 0 || !this.#terrain) return;
+      event.preventDefault();
+      this.#callbacks.onCanvasDoubleClick(this.#worldAt(this.#localPointer(event)));
     });
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   }
@@ -172,10 +248,14 @@ export class TerrainViewport {
       this.#callbacks.onPointerWorld(null);
       return;
     }
-    const world = screenToWorld(point, this.#view, this.#size());
+    const world = this.#worldAt(point);
     const inside = world.x >= 0 && world.x <= this.#terrain.worldWidthM
       && world.z >= 0 && world.z <= this.#terrain.worldDepthM;
     this.#callbacks.onPointerWorld(inside ? world : null);
+  }
+
+  #worldAt(point: { readonly x: number; readonly y: number }): PointXZ {
+    return screenToWorld(point, this.#view, this.#size());
   }
 
   #localPointer(event: MouseEvent | PointerEvent | WheelEvent): { readonly x: number; readonly y: number } {

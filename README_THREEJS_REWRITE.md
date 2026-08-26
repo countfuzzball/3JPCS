@@ -1,8 +1,8 @@
 # Polygon County Scenery Editor — Three.js rewrite
 
-This is a genuine static browser rewrite, implemented through **Milestone 0 and
-Milestone 1 only**. The Python/Tkinter application remains checked in beside it as the
-behavioural and data-contract reference.
+This is a genuine static browser rewrite, implemented through **Milestone 2**. The
+Python/Tkinter application remains checked in beside it as the behavioural and
+data-contract reference.
 
 ## Run and verify
 
@@ -65,9 +65,29 @@ Milestone 1 provides:
   preservation, and continuous X/Z/elevation/slope status; and
 - basic in-memory project source hints and dirty state with `beforeunload` protection.
 
-Project open/save/relink, authored geometry, prefabs, terrain pads, exports, explicit
-vegetation, and the full workload benchmark belong to later milestones and are not
-partially presented as finished here.
+Milestone 2 provides:
+
+- a normalized, insertion-ordered model store with O(1) entity lookup and UUID-backed
+  authored records;
+- strict v1/v2/v3/v4 scenery-project DTO validation and migration to the current v4
+  in-memory contract, including the explicit native `vegetation_instances` field;
+- delta-based add, update, remove, and composite commands with undo/redo and atomic
+  road-frontage cleanup when a referenced road is deleted;
+- place-region tools for town, village, farm, and military area;
+- land-use tools for pasture, rough grazing, and explicitly exposed woodland;
+- road and hedgerow polyline tools with world-metre widths;
+- Enter/double-click completion, Backspace draft removal, Escape cancellation, and
+  duplicate double-click-point prevention;
+- layer-aware selection and picking, selected vertex handles, whole-object and vertex
+  dragging constrained to the world, Ctrl-click segment insertion, and guarded vertex
+  deletion;
+- visibility and locking semantics plus typed property editing; and
+- disposable Three.js projections that rebuild only changed model records and never
+  become serialized truth.
+
+Project open/save/relink, prefab placement, terrain-pad editing, export workflows,
+native vegetation authoring, and the full workload benchmark belong to later
+milestones and are not partially presented as finished here.
 
 ## Source-of-truth priority
 
@@ -96,12 +116,13 @@ buffer. The original file bytes—not a decoded array—define the base SHA-256.
 ## Architecture
 
 ```text
-src/app/          composition, project seed, dirty state
-src/model/        contracts, validation errors, coordinate transforms
+src/app/          composition, normalized project state, dirty state
+src/model/        entities, strict DTO migration, validation, coordinate transforms
+src/history/      delta-based commands and undo/redo
 src/io/           browser terrain adapters and narrow NPY parser
 src/terrain/      immutable base terrain and NW–SE queries
-src/rendering/    Three.js controller and terrain adapter
-src/interaction/  orthographic fit/pan/zoom/cursor math
+src/rendering/    Three.js controller and disposable terrain/entity projections
+src/interaction/  navigation, layer-aware picking, and constrained geometry editing
 src/ui/           semantic DOM layout
 src/schemas/      explicitly versioned contract snapshots
 tests/            unit, golden fixture, and focused browser coverage
@@ -120,5 +141,5 @@ disposes replaced geometry, textures, and materials.
   to `NW–SE–NE` and `NW–SW–SE` so the front faces point `+Y`.
 - Height and slope queries are triangle-consistent, never bilinear.
 - Editable yaw remains clockwise-positive; a Three.js object uses the negative yaw
-  radians. Milestone 1 tests the `0/90/180/270` mapping even though object authoring
-  begins in later milestones.
+  radians. The `0/90/180/270` mapping is covered even though prefab placement begins
+  in a later milestone.

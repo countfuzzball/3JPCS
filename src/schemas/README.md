@@ -7,5 +7,9 @@ the Three.js rewrite:
 - `runtime-scenery-v2.schema.json` ← `schemas/runtime_scenery.schema.json`
 - `scenery-project-v3.schema.json` ← `schemas/scenery_project.schema.json`
 
-They are retained as explicit legacy/current contract fixtures. They are not silently
-expanded into future project v4 or runtime v3 schemas during Milestones 0–1.
+They are retained as explicit legacy contract fixtures and are not silently changed.
+
+`scenery-project-v4.schema.json` is the browser rewrite's current editable project
+contract. It adds the required native `vegetation_instances` collection. Milestone 2
+strictly loads v1–v4 and normalizes the in-memory model to v4 without rewriting the
+source document merely by reading it.
