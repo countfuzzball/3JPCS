@@ -1,0 +1,26 @@
+{
+  "format": "polygon-county-asset-catalog",
+  "schema_version": 3,
+  "category_defaults": {
+    "house": {
+      "proxy": {
+        "width_m": 10,
+        "depth_m": 8,
+        "wall_height_m": 4.5
+      }
+    },
+    "shed": {
+      "proxy": {
+        "width_m": 7,
+        "depth_m": 5,
+        "wall_height_m": 3
+      }
+    }
+  },
+  "assets": {
+    "house_demo_01": {
+      "category": "house",
+      "resource": "buildings/house_demo_01.glb"
+    }
+  }
+}

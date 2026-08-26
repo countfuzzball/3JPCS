@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#11191c" />
+    <title>Polygon County Scenery Editor</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      if (window.location.protocol === "file:") {
+        document.getElementById("app").innerHTML = `
+          <main style="max-width:42rem;margin:12vh auto;padding:2rem;font:16px/1.55 system-ui,sans-serif;color:#dbe4e7;background:#11191c;border:1px solid #405159;border-radius:12px">
+            <h1 style="margin-top:0">Serve the editor over HTTP</h1>
+            <p>This static app uses browser JavaScript modules, which cannot be loaded correctly by double-clicking <code>dist/index.html</code>.</p>
+            <p>From the project directory, run <code>npm install</code>, <code>npm run build</code>, then <code>npm run preview</code>, and open the HTTP URL Vite prints.</p>
+          </main>`;
+      }
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

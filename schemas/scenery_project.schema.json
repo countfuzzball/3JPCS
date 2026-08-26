@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polygon-county.invalid/scenery_project.schema.json",
+  "title": "Polygon County Scenery Project v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema_version", "name", "world", "sources", "terrain_fingerprint", "places", "land_use_regions", "roads", "linear_features", "prefab_instances"],
+  "properties": {
+    "format": {"const": "polygon-county-scenery-project"},
+    "schema_version": {"const": 3},
+    "name": {"type": "string", "minLength": 1},
+    "world": {"$ref": "#/$defs/world"},
+    "sources": {
+      "type": "object", "additionalProperties": false,
+      "required": ["terrain_npy", "terrain_descriptor", "vegetation", "county_features", "asset_catalog"],
+      "properties": {
+        "terrain_npy": {"type": "string", "minLength": 1},
+        "terrain_descriptor": {"type": "string", "minLength": 1},
+        "vegetation": {"type": ["string", "null"]},
+        "county_features": {"type": ["string", "null"]},
+        "asset_catalog": {"type": ["string", "null"]}
+      }
+    },
+    "terrain_fingerprint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sha256", "world_width_m", "world_depth_m", "spacing_m", "cell_count_x", "cell_count_z", "point_count_x", "point_count_z"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "world_width_m": {"type": "number", "exclusiveMinimum": 0},
+        "world_depth_m": {"type": "number", "exclusiveMinimum": 0},
+        "spacing_m": {"type": "number", "exclusiveMinimum": 0},
+        "cell_count_x": {"type": "integer", "minimum": 1},
+        "cell_count_z": {"type": "integer", "minimum": 1},
+        "point_count_x": {"type": "integer", "minimum": 2},
+        "point_count_z": {"type": "integer", "minimum": 2}
+      }
+    },
+    "places": {"type": "array", "items": {"$ref": "#/$defs/place"}},
+    "land_use_regions": {"type": "array", "items": {"$ref": "#/$defs/landUse"}},
+    "roads": {"type": "array", "items": {"$ref": "#/$defs/road"}},
+    "linear_features": {"type": "array", "items": {"$ref": "#/$defs/linear"}},
+    "prefab_instances": {"type": "array", "items": {"$ref": "#/$defs/prefab"}}
+  },
+  "$defs": {
+    "world": {
+      "type": "object", "additionalProperties": false,
+      "required": ["width_m", "depth_m", "terrain_spacing_m"],
+      "properties": {
+        "width_m": {"type": "number", "exclusiveMinimum": 0},
+        "depth_m": {"type": "number", "exclusiveMinimum": 0},
+        "terrain_spacing_m": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "point": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "items": false},
+    "common": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "name": {"type": "string", "minLength": 1},
+        "visible": {"type": "boolean"},
+        "locked": {"type": "boolean"}
+      }
+    },
+    "place": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "place_type", "points", "visible", "locked"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "place_type": {"enum": ["town", "village", "farm", "military_area"]},
+        "points": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/point"}},
+        "visible": {"type": "boolean"}, "locked": {"type": "boolean"}
+      }
+    },
+    "landUse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "land_use_type", "points", "visible", "locked"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "land_use_type": {"enum": ["pasture", "rough_grazing", "woodland"]},
+        "points": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/point"}},
+        "visible": {"type": "boolean"}, "locked": {"type": "boolean"}
+      }
+    },
+    "road": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "points", "width_m", "road_class", "surface", "visible", "locked"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "points": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/point"}},
+        "width_m": {"type": "number", "exclusiveMinimum": 0},
+        "road_class": {"enum": ["county_road", "local_road", "lane", "farm_track", "military_road"]},
+        "surface": {"enum": ["paved", "gravel", "dirt"]},
+        "visible": {"type": "boolean"}, "locked": {"type": "boolean"}
+      }
+    },
+    "linear": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "feature_type", "points", "nominal_width_m", "nominal_height_m", "visible", "locked"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "feature_type": {"const": "hedgerow"},
+        "points": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/point"}},
+        "nominal_width_m": {"type": "number", "exclusiveMinimum": 0},
+        "nominal_height_m": {"type": "number", "exclusiveMinimum": 0},
+        "visible": {"type": "boolean"}, "locked": {"type": "boolean"}
+      }
+    },
+    "prefab": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "category", "asset_id", "x_m", "z_m", "rotation_deg", "scale", "frontage_road_id", "terrain_pad", "visible", "locked"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "category": {"type": "string", "minLength": 1}, "asset_id": {"type": "string", "minLength": 1},
+        "x_m": {"type": "number"}, "z_m": {"type": "number"}, "rotation_deg": {"type": "number"},
+        "scale": {"type": "number", "exclusiveMinimum": 0},
+        "frontage_road_id": {"type": ["string", "null"], "format": "uuid"},
+        "terrain_pad": {"$ref": "#/$defs/terrainPad"},
+        "visible": {"type": "boolean"}, "locked": {"type": "boolean"}
+      }
+    },
+    "terrainPad": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enabled", "width_m", "depth_m", "blend_m", "target_mode"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "width_m": {"type": "number", "exclusiveMinimum": 0},
+        "depth_m": {"type": "number", "exclusiveMinimum": 0},
+        "blend_m": {"type": "number", "minimum": 0},
+        "target_mode": {"const": "base_terrain_at_origin"}
+      }
+    }
+  }
+}

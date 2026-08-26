@@ -1,0 +1,22 @@
+{
+  "format": "polygon-county-asset-catalog",
+  "schema_version": 3,
+  "category_defaults": {
+    "house": {
+      "proxy": {"width_m": 10.0, "depth_m": 8.0, "wall_height_m": 4.5}
+    },
+    "shed": {
+      "proxy": {"width_m": 7.0, "depth_m": 5.0, "wall_height_m": 3.0}
+    },
+    "barn": {
+      "proxy": {"width_m": 18.0, "depth_m": 28.0, "wall_height_m": 8.0}
+    },
+    "military_compound": {
+      "proxy": {"width_m": 30.0, "depth_m": 30.0, "wall_height_m": 5.0}
+    }
+  },
+  "assets": {
+    "example_house": {"category": "house", "resource": "buildings/example_house.glb"},
+    "example_shed": {"category": "shed", "resource": "buildings/example_shed.glb"}
+  }
+}

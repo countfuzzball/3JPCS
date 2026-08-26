@@ -1,0 +1,10 @@
+[project]
+name = "polygon-county-scenery-editor"
+version = "0.2.0"
+description = "Standalone Tkinter authoring tool for human scenery over Polygon County terrain"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "Pillow>=10.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

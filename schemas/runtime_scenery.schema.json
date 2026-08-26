@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polygon-county.invalid/runtime_scenery.schema.json",
+  "title": "Polygon County Runtime Scenery v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema_version", "coordinate_system", "world", "terrain_float32_sha256", "place_regions", "land_use_regions", "roads", "hedgerows", "prefab_instances"],
+  "properties": {
+    "format": {"const": "polygon-county-runtime-scenery"},
+    "schema_version": {"const": 2},
+    "coordinate_system": {"const": "X east/right, terrain Y elevation, Z south/down; metres"},
+    "world": {"type": "object"},
+    "terrain_float32_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "place_regions": {"type": "array"},
+    "land_use_regions": {"type": "array"},
+    "roads": {"type": "array"},
+    "hedgerows": {"type": "array"},
+    "prefab_instances": {"type": "array"}
+  }
+}

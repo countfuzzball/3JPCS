@@ -1,0 +1,26 @@
+{
+  "world_width_m": 20,
+  "world_depth_m": 20,
+  "terrain_spacing_m": 10,
+  "terrain_cells": {
+    "x": 2,
+    "z": 2,
+    "total": 4
+  },
+  "elevation_points": {
+    "x": 3,
+    "z": 3,
+    "total": 9
+  },
+  "minimum_elevation_m": -100,
+  "sea_level_m": 0,
+  "lowland_reference_elevation_m": 5,
+  "maximum_elevation_m": 100,
+  "uint16_reference_values": {
+    "sea_level": 32768,
+    "lowland_reference": 34406
+  },
+  "vertical_encoding": "Unsigned 16-bit greyscale: 0 maps to minimum_elevation_m and 65535 maps to maximum_elevation_m; values outside that range are clipped.",
+  "grid_layout": "Rows increase along +Z; columns increase along +X.",
+  "cell_diagonal": "Each cell is divided from northwest to southeast."
+}

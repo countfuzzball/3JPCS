@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polygon-county.invalid/asset_catalog.schema.json",
+  "title": "Polygon County Asset Catalogue v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema_version", "category_defaults", "assets"],
+  "properties": {
+    "format": {"const": "polygon-county-asset-catalog"},
+    "schema_version": {"const": 3},
+    "category_defaults": {
+      "type": "object",
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proxy"],
+        "properties": {
+          "proxy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["width_m", "depth_m", "wall_height_m"],
+            "properties": {
+              "width_m": {"type": "number", "exclusiveMinimum": 0},
+              "depth_m": {"type": "number", "exclusiveMinimum": 0},
+              "wall_height_m": {"type": "number", "exclusiveMinimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "resource"],
+        "properties": {
+          "category": {"type": "string", "minLength": 1},
+          "resource": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

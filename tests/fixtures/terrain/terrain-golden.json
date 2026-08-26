@@ -1,0 +1,48 @@
+{
+  "shape": [
+    3,
+    3
+  ],
+  "row_major_heights": [
+    0,
+    10,
+    20,
+    20,
+    40,
+    60,
+    50,
+    70,
+    90
+  ],
+  "source_sha256": {
+    "terrain-v1-c.npy": "c2013f1b8a7ea1a0bb6f325484795d231e98d9dd8505cb9b5fa94f056f4ef27f",
+    "terrain-v2-fortran.npy": "5c17c7d8f0f5a52106d7325a4baf488bbef9908d08e0e87c00e39b597bc9278f",
+    "terrain-v3-c.npy": "016ee231ae5b8578b8e63ab76b6ae977fd43b130fe7677ef885d4d3000908f96"
+  },
+  "samples": [
+    {
+      "x_m": 8,
+      "z_m": 2,
+      "height_m": 14
+    },
+    {
+      "x_m": 2,
+      "z_m": 8,
+      "height_m": 20
+    },
+    {
+      "x_m": 0,
+      "z_m": 0,
+      "height_m": 0
+    },
+    {
+      "x_m": 20,
+      "z_m": 20,
+      "height_m": 90
+    }
+  ],
+  "slopes_deg": {
+    "upper_triangle": 72.4515993862077,
+    "lower_triangle": 70.52877936550931
+  }
+}

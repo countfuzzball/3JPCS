@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.test-tmp*/
+.verification-*/
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
