@@ -35,7 +35,7 @@ const ENTITY_KINDS = ["place", "land_use", "road", "linear_feature", "prefab", "
 export class ProjectModel {
   public readonly name: string;
   public readonly world: ProjectWorld;
-  public readonly sources: ProjectSources;
+  public sources: ProjectSources;
   public readonly terrainFingerprint: TerrainFingerprint;
   readonly #records = new Map<string, AuthoredEntity>();
   readonly #orders: Record<EntityKind, string[]> = {
@@ -116,6 +116,18 @@ export class ProjectModel {
       }
     }
     return result;
+  }
+
+  public prefabInstances(): readonly PrefabInstance[] {
+    return this.#orders.prefab.map((id) => {
+      const entity = this.#require(id);
+      if (entity.kind !== "prefab") throw new ContractError("normalized prefab collection is inconsistent");
+      return entity;
+    });
+  }
+
+  public setAssetCatalogSource(sourceName: string | null): void {
+    this.sources = { ...this.sources, asset_catalog: sourceName };
   }
 
   public all(): readonly AuthoredEntity[] {

@@ -1,5 +1,6 @@
 import { ContractError } from "../model/errors";
 import type { TerrainDescriptor } from "../model/terrainDescriptor";
+import type { TerrainSurface } from "./TerrainSurface";
 
 export interface TerrainFingerprint {
   readonly sha256: string;
@@ -12,7 +13,7 @@ export interface TerrainFingerprint {
   readonly point_count_z: number;
 }
 
-export class TerrainReference {
+export class TerrainReference implements TerrainSurface {
   readonly #heights: Float32Array;
   public readonly descriptor: TerrainDescriptor;
   public readonly sourceSha256: string;

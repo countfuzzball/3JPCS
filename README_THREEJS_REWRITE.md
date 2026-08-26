@@ -1,6 +1,6 @@
 # Polygon County Scenery Editor — Three.js rewrite
 
-This is a genuine static browser rewrite, implemented through **Milestone 2**. The
+This is a genuine static browser rewrite, implemented through **Milestone 3**. The
 Python/Tkinter application remains checked in beside it as the behavioural and
 data-contract reference.
 
@@ -85,9 +85,33 @@ Milestone 2 provides:
 - disposable Three.js projections that rebuild only changed model records and never
   become serialized truth.
 
-Project open/save/relink, prefab placement, terrain-pad editing, export workflows,
-native vegetation authoring, and the full workload benchmark belong to later
-milestones and are not partially presented as finished here.
+Milestone 3 provides:
+
+- strict asset-catalogue v3 JSON validation with exact keys, positive category proxy
+  dimensions, logical resource IDs, and stable asset ordering/lookups;
+- catalogue asset selection, footprint/front ghost placement, conspicuous missing-
+  asset fallbacks, and stable per-record Three.js proxy projections;
+- local `-Z` front, clockwise-positive yaw, `Q`/`E` rotation, scale-aware proxy
+  footprints, world-clamped dragging, and locked-prefab spatial immutability;
+- typed prefab asset/category/transform/frontage properties, including automatic
+  adoption of a known asset's category and atomic frontage cleanup with road deletion;
+- terrain-pad core/blend overlays, pad properties and reset, nine-point site sampling,
+  and warnings for footprints extending outside the world;
+- an immutable-base, derived float32 working terrain whose visible enabled pads compose
+  in project order with rotated, cell-aware coverage and smoothstep blending;
+- scale-independent pads, deterministic overlap ordering, base-height-at-origin pad
+  targets, and exact Python-derived working-terrain golden coverage;
+- targeted pad recomposition for relevant edits and pad-aware undo/redo, while ordinary
+  selection, catalogue, frontage, scale, and geometry edits avoid terrain rebuilds; and
+- independent prefab and terrain-pad layer controls with layer-aware picking and
+  in-place terrain mesh/texture refresh that preserves the active view.
+
+Project open/save/relink, export workflows, native vegetation authoring/rendering,
+actual GLB loading, and the full workload benchmark belong to later milestones and
+are not partially presented as finished here.
+
+The current verification baseline is 87 Vitest tests, 3 Playwright milestone flows,
+and all 45 Python reference tests.
 
 ## Source-of-truth priority
 
@@ -104,8 +128,9 @@ The untracked `examples/catalog.json` is intentionally preserved. The tracked
 ## Browser file limitations
 
 A static browser cannot reopen an arbitrary path stored in `sources.*`. Source strings
-are portable name/path hints only; they are not file capabilities. Milestone 1 obtains
-fresh `File` objects from explicit file inputs. Later project-open work must relink
+are portable name/path hints only; they are not file capabilities. Milestones 1 and 3
+obtain fresh `File` objects from explicit terrain and catalogue inputs. Later
+project-open work must relink
 missing sources through user selection and must never serialize `File`, directory
 handles, Three.js objects, or browser-only state.
 
@@ -120,7 +145,7 @@ src/app/          composition, normalized project state, dirty state
 src/model/        entities, strict DTO migration, validation, coordinate transforms
 src/history/      delta-based commands and undo/redo
 src/io/           browser terrain adapters and narrow NPY parser
-src/terrain/      immutable base terrain and NW–SE queries
+src/terrain/      immutable base, derived float32 working terrain, NW–SE queries
 src/rendering/    Three.js controller and disposable terrain/entity projections
 src/interaction/  navigation, layer-aware picking, and constrained geometry editing
 src/ui/           semantic DOM layout
@@ -140,6 +165,5 @@ disposes replaced geometry, textures, and materials.
 - Every cell uses vertex sets `NW–NE–SE` and `NW–SE–SW`; mesh winding is reordered
   to `NW–SE–NE` and `NW–SW–SE` so the front faces point `+Y`.
 - Height and slope queries are triangle-consistent, never bilinear.
-- Editable yaw remains clockwise-positive; a Three.js object uses the negative yaw
-  radians. The `0/90/180/270` mapping is covered even though prefab placement begins
-  in a later milestone.
+- Editable yaw is clockwise-positive from local front `-Z`; a Three.js object uses the
+  negative yaw radians. The `0/90/180/270` mapping and front marker are covered.

@@ -5,6 +5,9 @@ export interface EditorElements {
   readonly redoButton: HTMLButtonElement;
   readonly toolButtons: readonly HTMLButtonElement[];
   readonly toolInstructions: HTMLElement;
+  readonly assetCatalogInput: HTMLInputElement;
+  readonly assetSelect: HTMLSelectElement;
+  readonly assetSummary: HTMLElement;
   readonly dialog: HTMLDialogElement;
   readonly projectForm: HTMLFormElement;
   readonly projectName: HTMLInputElement;
@@ -21,6 +24,8 @@ export interface EditorElements {
   readonly layerLandUse: HTMLInputElement;
   readonly layerRoads: HTMLInputElement;
   readonly layerHedgerows: HTMLInputElement;
+  readonly layerPrefabs: HTMLInputElement;
+  readonly layerTerrainPads: HTMLInputElement;
   readonly projectTitle: HTMLElement;
   readonly dirtyMarker: HTMLElement;
   readonly projectState: HTMLElement;
@@ -84,26 +89,40 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
             </div>
             <p id="tool-instructions" class="milestone-note">Create a terrain project to enable geometry authoring.</p>
           </section>
+          <section class="panel-section prefab-section">
+            <div class="section-heading"><span>02</span><h2>Prefab assets</h2></div>
+            <label class="catalogue-picker" for="asset-catalog-file">
+              <strong>Load asset catalogue v3</strong><small>Strict local JSON · resources remain logical IDs</small>
+              <input id="asset-catalog-file" type="file" accept=".json,application/json" />
+            </label>
+            <label class="field-label compact-label" for="asset-select">Placement asset</label>
+            <select id="asset-select" class="asset-select" disabled><option value="">No catalogue loaded</option></select>
+            ${toolButton("prefab", "⌂", "Place prefab")}
+            <p id="asset-summary" class="asset-summary">Load the shared catalogue to enable proxy placement.</p>
+          </section>
           <section class="panel-section layers-section">
-            <div class="section-heading"><span>02</span><h2>Terrain layers</h2></div>
+            <div class="section-heading"><span>03</span><h2>Terrain layers</h2></div>
             ${layerToggle("layer-terrain", "Terrain colour", "Elevation palette", "terrain-swatch")}
             ${layerToggle("layer-hillshade", "Hillshade", "Northwest lighting", "hillshade-swatch")}
             ${layerToggle("layer-contours", "Contours", "Adaptive metre interval", "contour-swatch")}
           </section>
           <section class="panel-section layers-section">
-            <div class="section-heading"><span>03</span><h2>Authored layers</h2></div>
+            <div class="section-heading"><span>04</span><h2>Authored layers</h2></div>
             ${layerToggle("layer-places", "Place regions", "Town, village, farm, military", "places-swatch")}
             ${layerToggle("layer-land-use", "Land use", "Pasture, grazing, woodland", "land-use-swatch")}
             ${layerToggle("layer-roads", "Native roads", "World-width geometry", "roads-swatch")}
             ${layerToggle("layer-hedgerows", "Hedgerows", "Editable control lines", "hedgerows-swatch")}
+            ${layerToggle("layer-prefabs", "Prefabs", "Catalogue proxy footprints", "prefabs-swatch")}
+            ${layerToggle("layer-terrain-pads", "Terrain pads", "Core and blend extents", "pads-swatch")}
           </section>
           <section class="panel-section navigation-help">
-            <div class="section-heading"><span>04</span><h2>Shortcuts</h2></div>
+            <div class="section-heading"><span>05</span><h2>Shortcuts</h2></div>
             <dl>
               <div><dt>Finish / cancel</dt><dd><kbd>Enter</kbd> / <kbd>Esc</kbd></dd></div>
               <div><dt>Draft point</dt><dd><kbd>Backspace</kbd></dd></div>
               <div><dt>Delete</dt><dd><kbd>Delete</kbd></dd></div>
               <div><dt>Vertex delete</dt><dd><kbd>Shift Delete</kbd></dd></div>
+              <div><dt>Rotate prefab</dt><dd><kbd>Q</kbd> / <kbd>E</kbd></dd></div>
               <div><dt>Pan</dt><dd>Middle/right drag</dd></div>
             </dl>
           </section>
@@ -149,7 +168,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         <div class="status-metric"><span>X / Z</span><strong id="status-coordinates">—</strong></div>
         <div class="status-metric"><span>ELEVATION</span><strong id="status-elevation">—</strong></div>
         <div class="status-metric"><span>SLOPE</span><strong id="status-slope">—</strong></div>
-        <div class="status-build">MILESTONES 0–2</div>
+        <div class="status-build">MILESTONES 0–3</div>
       </footer>
     </main>
 
@@ -198,6 +217,9 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     redoButton: byId("redo", HTMLButtonElement),
     toolButtons: [...document.querySelectorAll<HTMLButtonElement>("[data-tool]")],
     toolInstructions: byId("tool-instructions", HTMLElement),
+    assetCatalogInput: byId("asset-catalog-file", HTMLInputElement),
+    assetSelect: byId("asset-select", HTMLSelectElement),
+    assetSummary: byId("asset-summary", HTMLElement),
     dialog: byId("new-project-dialog", HTMLDialogElement),
     projectForm: byId("new-project-form", HTMLFormElement),
     projectName: byId("project-name", HTMLInputElement),
@@ -214,6 +236,8 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     layerLandUse: byId("layer-land-use", HTMLInputElement),
     layerRoads: byId("layer-roads", HTMLInputElement),
     layerHedgerows: byId("layer-hedgerows", HTMLInputElement),
+    layerPrefabs: byId("layer-prefabs", HTMLInputElement),
+    layerTerrainPads: byId("layer-terrain-pads", HTMLInputElement),
     projectTitle: byId("project-title", HTMLElement),
     dirtyMarker: byId("dirty-marker", HTMLElement),
     projectState: byId("project-state", HTMLElement),

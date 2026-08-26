@@ -5,8 +5,8 @@ This repository now contains two deliberately separate implementations:
 - the preserved Python/Tkinter v0.2 prototype, which remains the behavioural and
   interchange-contract reference; and
 - the browser-based Vite/TypeScript/Three.js rewrite, currently implemented through
-  Milestone 2 (application shell, terrain import, rendering, orthographic navigation,
-  and native place/land-use/road/hedgerow authoring).
+  Milestone 3 (application shell, terrain import, native geometry, strict catalogue
+  prefabs, proxy editing, and deterministic terrain-pad composition).
 
 See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
 its verified commands, architecture, browser file limitations, and milestone status.

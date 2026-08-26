@@ -1,6 +1,8 @@
 import { importTerrainSources } from "../io/terrainImport";
+import { AssetCatalog, type AssetDefinition } from "../model/assetCatalog";
 import type { PointXZ } from "../model/coordinates";
 import {
+  DEFAULT_TERRAIN_PAD,
   LAND_USE_TYPES,
   PLACE_TYPES,
   ROAD_CLASSES,
@@ -11,6 +13,7 @@ import {
   type LandUseRegion,
   type PlaceRegion,
   type PointTuple,
+  type PrefabInstance,
   type Road,
 } from "../model/entities";
 import {
@@ -26,12 +29,19 @@ import {
   type GeometryLayerState,
 } from "../interaction/geometryEditing";
 import {
+  hitTestPrefab,
+  movePrefab,
+  prefabFootprint,
+} from "../interaction/prefabEditing";
+import {
   TerrainViewport,
   type CanvasClickIntent,
   type PrimaryPointerIntent,
 } from "../rendering/TerrainViewport";
 import type { TerrainLayerState } from "../rendering/terrain/terrainTexture";
 import type { TerrainReference } from "../terrain/TerrainReference";
+import type { TerrainSurface } from "../terrain/TerrainSurface";
+import type { WorkingTerrain } from "../terrain/WorkingTerrain";
 import { buildRootLayout, type EditorElements } from "../ui/rootLayout";
 import { EditorStore, type EditorState } from "./EditorStore";
 
@@ -39,12 +49,13 @@ type Tool = "select"
   | `place:${typeof PLACE_TYPES[number]}`
   | `land:${typeof LAND_USE_TYPES[number]}`
   | "road"
-  | "hedgerow";
+  | "hedgerow"
+  | "prefab";
 
 interface DragState {
   readonly id: string;
   readonly start: PointXZ;
-  readonly original: GeometryEntity;
+  readonly original: GeometryEntity | PrefabInstance;
   readonly vertexIndex: number | null;
 }
 
@@ -59,19 +70,23 @@ const TOOL_INSTRUCTIONS: Record<Tool, string> = {
   "land:woodland": "Click woodland vertices. Enter or double-click finishes; Backspace removes; Escape cancels.",
   road: "Click ordered road control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
   hedgerow: "Click ordered hedgerow control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
+  prefab: "Choose a catalogue asset, hover to preview its footprint/front, then click once to place it.",
 };
 
 export class EditorApp {
   readonly #elements: EditorElements;
   readonly #store = new EditorStore();
   readonly #viewport: TerrainViewport;
-  #activeTerrain: TerrainReference | null = null;
+  #activeBaseTerrain: TerrainReference | null = null;
+  #activeTerrain: TerrainSurface | null = null;
+  #activeCatalog: AssetCatalog | null = null;
   #tool: Tool = "select";
   #selectedId: string | null = null;
   #selectedVertex: number | null = null;
   #draft: PointXZ[] = [];
   #draftHover: PointXZ | null = null;
   #drag: DragState | null = null;
+  #prefabGhost: PointXZ | null = null;
 
   public constructor(host: HTMLElement) {
     this.#elements = buildRootLayout(host);
@@ -109,6 +124,8 @@ export class EditorApp {
     this.#elements.fitButton.addEventListener("click", () => this.#viewport.fitTerrain());
     this.#elements.undoButton.addEventListener("click", () => this.#undo());
     this.#elements.redoButton.addEventListener("click", () => this.#redo());
+    this.#elements.assetCatalogInput.addEventListener("change", () => { void this.#loadAssetCatalog(); });
+    this.#elements.assetSelect.addEventListener("change", () => this.#syncProjection());
     for (const button of this.#elements.toolButtons) {
       button.addEventListener("click", () => {
         const tool = button.dataset.tool;
@@ -118,8 +135,15 @@ export class EditorApp {
     for (const input of [this.#elements.layerTerrain, this.#elements.layerHillshade, this.#elements.layerContours]) {
       input.addEventListener("change", () => this.#viewport.setLayers(this.#terrainLayers()));
     }
-    for (const input of [this.#elements.layerPlaces, this.#elements.layerLandUse, this.#elements.layerRoads, this.#elements.layerHedgerows]) {
-      input.addEventListener("change", () => this.#syncProjection());
+    for (const input of [
+      this.#elements.layerPlaces,
+      this.#elements.layerLandUse,
+      this.#elements.layerRoads,
+      this.#elements.layerHedgerows,
+      this.#elements.layerPrefabs,
+      this.#elements.layerTerrainPads,
+    ]) {
+      input.addEventListener("change", () => this.#authoringLayerChanged());
     }
     this.#elements.inspector.addEventListener("submit", (event) => {
       if (event.target instanceof HTMLFormElement && event.target.matches("[data-property-form]")) {
@@ -132,6 +156,9 @@ export class EditorApp {
       if (!target) return;
       if (target.dataset.action === "delete-object") this.#deleteSelected(false);
       if (target.dataset.action === "delete-vertex") this.#deleteSelected(true);
+      if (target.dataset.action === "rotate-negative") this.#rotateSelected(-15);
+      if (target.dataset.action === "rotate-positive") this.#rotateSelected(15);
+      if (target.dataset.action === "reset-pad") this.#resetSelectedPad();
     });
     window.addEventListener("keydown", (event) => this.#keyDown(event));
     window.addEventListener("beforeunload", (event) => {
@@ -167,6 +194,20 @@ export class EditorApp {
     }
   }
 
+  async #loadAssetCatalog(): Promise<void> {
+    const file = this.#elements.assetCatalogInput.files?.[0];
+    if (!file || !this.#store.state.model) return;
+    this.#elements.assetSummary.textContent = "Validating catalogue…";
+    try {
+      const catalog = AssetCatalog.fromJson(await file.text());
+      this.#store.setAssetCatalog(catalog, file.name);
+      this.#elements.statusMessage.textContent = `Loaded ${file.name} — ${String(catalog.assets.length)} prefab assets ready`;
+    } catch (error) {
+      this.#elements.assetCatalogInput.value = "";
+      this.#elements.assetSummary.textContent = error instanceof Error ? error.message : String(error);
+    }
+  }
+
   #renderState(state: EditorState): void {
     if (this.#selectedId && !state.model?.has(this.#selectedId)) {
       this.#selectedId = null;
@@ -184,11 +225,20 @@ export class EditorApp {
     this.#elements.redoButton.disabled = !state.canRedo;
     this.#elements.undoButton.title = state.undoLabel ? `Undo ${state.undoLabel}` : "Nothing to undo";
     this.#elements.redoButton.title = state.redoLabel ? `Redo ${state.redoLabel}` : "Nothing to redo";
-    for (const button of this.#elements.toolButtons) button.disabled = !state.model;
+    if (state.assetCatalog !== this.#activeCatalog) {
+      this.#activeCatalog = state.assetCatalog;
+      this.#renderAssetChoices(state.assetCatalog);
+    }
+    for (const button of this.#elements.toolButtons) {
+      button.disabled = !state.model || (button.dataset.tool === "prefab" && (!state.assetCatalog || state.assetCatalog.assets.length === 0));
+    }
+    this.#elements.assetCatalogInput.disabled = !state.model;
 
-    if (state.terrain && state.terrain !== this.#activeTerrain) {
-      this.#activeTerrain = state.terrain;
-      this.#viewport.setTerrain(state.terrain);
+    if (state.terrain && state.workingTerrain && state.workingTerrain !== this.#activeTerrain) {
+      const preserveView = this.#activeBaseTerrain === state.terrain;
+      this.#activeBaseTerrain = state.terrain;
+      this.#activeTerrain = state.workingTerrain;
+      this.#viewport.setTerrain(state.workingTerrain, preserveView);
       this.#elements.viewportEmpty.hidden = true;
       this.#viewport.setDrawingCursor(false);
     }
@@ -198,10 +248,15 @@ export class EditorApp {
 
   #setTool(tool: Tool): void {
     if (!this.#store.state.model) return;
+    if (tool === "prefab" && !this.#selectedAsset()) {
+      this.#elements.statusMessage.textContent = "Load an asset catalogue and choose an asset before placing a prefab";
+      return;
+    }
     this.#tool = tool;
     this.#draft = [];
     this.#draftHover = null;
     this.#drag = null;
+    this.#prefabGhost = null;
     for (const button of this.#elements.toolButtons) {
       const active = button.dataset.tool === tool;
       button.classList.toggle("is-active", active);
@@ -217,13 +272,24 @@ export class EditorApp {
     const model = this.#store.state.model;
     if (!model || !isPointInsideWorld(intent.point, model.bounds)) return;
     const point = clampPoint(intent.point, model.bounds);
-    const hit = hitTestGeometry(
+    const geometryHit = hitTestGeometry(
       model,
       point,
       this.#viewport.worldUnitsPerPixel() * 8,
       this.#geometryLayers(),
       this.#selectedId,
     );
+    const prefab = hitTestPrefab(
+      model.prefabInstances(),
+      point,
+      this.#store.state.assetCatalog,
+      this.#elements.layerPrefabs.checked,
+    );
+    const hit = geometryHit && geometryHit.vertexIndex !== null
+      ? geometryHit
+      : prefab
+        ? { id: prefab.id, vertexIndex: null }
+        : geometryHit;
     this.#selectedId = hit?.id ?? null;
     this.#selectedVertex = hit?.vertexIndex ?? null;
     const entity = hit ? model.get(hit.id) : undefined;
@@ -244,7 +310,7 @@ export class EditorApp {
         return;
       }
     }
-    if (entity && !entity.locked && isGeometry(entity)) {
+    if (entity && !entity.locked && (isGeometry(entity) || entity.kind === "prefab")) {
       this.#drag = { id: entity.id, start: point, original: entity, vertexIndex: hit?.vertexIndex ?? null };
     }
     this.#renderInteraction();
@@ -255,7 +321,9 @@ export class EditorApp {
     if (!model || !this.#drag) return;
     const current = clampPoint(point, model.bounds);
     const delta = { x: current.x - this.#drag.start.x, z: current.z - this.#drag.start.z };
-    const replacement = moveGeometryEntity(this.#drag.original, delta, model.bounds, this.#drag.vertexIndex);
+    const replacement = this.#drag.original.kind === "prefab"
+      ? movePrefab(this.#drag.original, delta, model.bounds)
+      : moveGeometryEntity(this.#drag.original, delta, model.bounds, this.#drag.vertexIndex);
     this.#store.replaceLive(replacement);
   }
 
@@ -265,11 +333,11 @@ export class EditorApp {
     const drag = this.#drag;
     this.#drag = null;
     const final = model.get(drag.id);
-    if (final && isGeometry(final)) {
+    if (final && (isGeometry(final) || final.kind === "prefab")) {
       this.#store.recordAppliedUpdate(
         drag.original,
         final,
-        drag.vertexIndex === null ? "Move object" : "Move vertex",
+        drag.original.kind === "prefab" ? "Move prefab" : drag.vertexIndex === null ? "Move object" : "Move vertex",
       );
     }
   }
@@ -278,6 +346,10 @@ export class EditorApp {
     if (this.#tool === "select" || intent.detail !== 1) return;
     const model = this.#store.state.model;
     if (!model || !isPointInsideWorld(intent.point, model.bounds)) return;
+    if (this.#tool === "prefab") {
+      this.#placePrefab(clampPoint(intent.point, model.bounds));
+      return;
+    }
     this.#draft.push(clampPoint(intent.point, model.bounds));
     this.#elements.statusMessage.textContent = `${String(this.#draft.length)} draft point${this.#draft.length === 1 ? "" : "s"} — Enter or double-click to finish`;
     this.#syncProjection();
@@ -285,7 +357,7 @@ export class EditorApp {
 
   #finishDraft(): void {
     const model = this.#store.state.model;
-    if (!model || this.#tool === "select") return;
+    if (!model || this.#tool === "select" || this.#tool === "prefab") return;
     const points = dedupeDraft(this.#draft);
     const polygon = this.#tool.startsWith("place:") || this.#tool.startsWith("land:");
     const required = polygon ? 3 : 2;
@@ -352,6 +424,33 @@ export class EditorApp {
     this.#renderInspector();
   }
 
+  #placePrefab(point: PointXZ): void {
+    const model = this.#store.state.model;
+    const asset = this.#selectedAsset();
+    if (!model || !asset) return;
+    const entity: PrefabInstance = {
+      kind: "prefab",
+      id: newEntityId(),
+      name: model.nextUniqueName(asset.display_name),
+      visible: true,
+      locked: false,
+      category: asset.category,
+      asset_id: asset.asset_id,
+      x_m: point.x,
+      z_m: point.z,
+      rotation_deg: 0,
+      scale: 1,
+      frontage_road_id: null,
+      terrain_pad: { ...DEFAULT_TERRAIN_PAD },
+    };
+    this.#selectedId = entity.id;
+    this.#selectedVertex = null;
+    this.#store.addEntity(entity, `Place ${asset.display_name}`);
+    this.#elements.statusMessage.textContent = `Placed ${entity.name}`;
+    this.#setTool("select");
+    this.#renderInspector();
+  }
+
   #cancelInteraction(): void {
     if (this.#drag) {
       this.#store.replaceLive(this.#drag.original);
@@ -359,6 +458,7 @@ export class EditorApp {
     }
     this.#draft = [];
     this.#draftHover = null;
+    this.#prefabGhost = null;
     this.#elements.statusMessage.textContent = "Draft cancelled";
     this.#syncProjection();
   }
@@ -400,11 +500,38 @@ export class EditorApp {
     this.#renderInteraction();
   }
 
+  #rotateSelected(deltaDeg: number): void {
+    const model = this.#store.state.model;
+    const before = this.#selectedId ? model?.get(this.#selectedId) : undefined;
+    if (before?.kind !== "prefab") return;
+    if (before.locked) {
+      this.#elements.statusMessage.textContent = `${before.name} is locked — unlock it before rotating`;
+      return;
+    }
+    const rotation = normalizeDegrees(before.rotation_deg + deltaDeg);
+    const after: PrefabInstance = { ...before, rotation_deg: rotation };
+    this.#store.updateEntity(before, after, "Rotate prefab");
+    this.#elements.statusMessage.textContent = `Rotated ${after.name} to ${rotation.toFixed(0)}°`;
+  }
+
+  #resetSelectedPad(): void {
+    const model = this.#store.state.model;
+    const before = this.#selectedId ? model?.get(this.#selectedId) : undefined;
+    if (before?.kind !== "prefab") return;
+    if (before.locked) {
+      this.#elements.statusMessage.textContent = `${before.name} is locked — unlock it before resetting its terrain pad`;
+      return;
+    }
+    const after: PrefabInstance = { ...before, terrain_pad: { ...DEFAULT_TERRAIN_PAD } };
+    this.#store.updateEntity(before, after, "Reset terrain pad");
+    this.#elements.statusMessage.textContent = `Reset ${after.name} to the disabled placement pad default`;
+  }
+
   #applyProperties(form: HTMLFormElement): void {
     const model = this.#store.state.model;
     if (!model || !this.#selectedId) return;
     const before = model.get(this.#selectedId);
-    if (!before || !isGeometry(before)) return;
+    if (!before || (!isGeometry(before) && before.kind !== "prefab")) return;
     const data = new FormData(form);
     try {
       const common = {
@@ -412,7 +539,7 @@ export class EditorApp {
         visible: data.get("visible") === "on",
         locked: data.get("locked") === "on",
       };
-      let after: GeometryEntity;
+      let after: GeometryEntity | PrefabInstance;
       switch (before.kind) {
         case "place":
           after = { ...before, ...common, place_type: requiredText(data, "place_type") as PlaceRegion["place_type"] };
@@ -437,8 +564,34 @@ export class EditorApp {
             nominal_height_m: requiredNumber(data, "nominal_height_m"),
           };
           break;
+        case "prefab": {
+          const assetId = requiredText(data, "asset_id");
+          const definition = this.#store.state.assetCatalog?.definition(assetId);
+          after = {
+            ...before,
+            ...common,
+            asset_id: assetId,
+            category: definition?.category ?? requiredText(data, "category"),
+            x_m: requiredNumber(data, "x_m"),
+            z_m: requiredNumber(data, "z_m"),
+            rotation_deg: normalizeDegrees(requiredNumber(data, "rotation_deg")),
+            scale: requiredNumber(data, "scale"),
+            frontage_road_id: optionalText(data, "frontage_road_id"),
+            terrain_pad: {
+              enabled: data.get("terrain_pad_enabled") === "on",
+              width_m: requiredNumber(data, "terrain_pad_width_m"),
+              depth_m: requiredNumber(data, "terrain_pad_depth_m"),
+              blend_m: requiredNumber(data, "terrain_pad_blend_m"),
+              target_mode: "base_terrain_at_origin",
+            },
+          };
+          if (before.locked && prefabSpatialFieldsChanged(before, after)) {
+            throw new Error("Unlock this prefab and apply before changing its footprint, transform, or terrain pad");
+          }
+          break;
+        }
       }
-      this.#store.updateEntity(before, after, "Edit properties");
+      if (!this.#store.updateEntity(before, after, "Edit properties")) this.#renderInspector();
       this.#elements.statusMessage.textContent = `Updated ${after.name}`;
     } catch (error) {
       const errorBox = form.querySelector<HTMLElement>("[data-property-error]");
@@ -491,11 +644,17 @@ export class EditorApp {
     } else if (event.key === "Delete") {
       event.preventDefault();
       this.#deleteSelected(event.shiftKey);
+    } else if (event.key.toLowerCase() === "q") {
+      event.preventDefault();
+      this.#rotateSelected(-15);
+    } else if (event.key.toLowerCase() === "e") {
+      event.preventDefault();
+      this.#rotateSelected(15);
     }
   }
 
   #updatePointerStatus(point: PointXZ | null): void {
-    const terrain = this.#store.state.terrain;
+    const terrain = this.#store.state.workingTerrain;
     const model = this.#store.state.model;
     if (!point || !terrain || !model || !isPointInsideWorld(point, model.bounds)) {
       this.#elements.statusCoordinates.textContent = "—";
@@ -503,6 +662,10 @@ export class EditorApp {
       this.#elements.statusSlope.textContent = "—";
       if (this.#draftHover) {
         this.#draftHover = null;
+        this.#syncProjection();
+      }
+      if (this.#prefabGhost) {
+        this.#prefabGhost = null;
         this.#syncProjection();
       }
       return;
@@ -514,6 +677,10 @@ export class EditorApp {
       this.#draftHover = point;
       this.#syncProjection();
     }
+    if (this.#tool === "prefab") {
+      this.#prefabGhost = point;
+      this.#syncProjection();
+    }
   }
 
   #renderInteraction(): void {
@@ -522,26 +689,38 @@ export class EditorApp {
   }
 
   #syncProjection(): void {
+    const selectedAsset = this.#selectedAsset();
     this.#viewport.setAuthoringProjection(
       this.#store.state.model,
+      this.#store.state.assetCatalog,
       this.#selectedId,
       this.#selectedVertex,
       this.#geometryLayers(),
+      this.#prefabLayers(),
       {
         points: this.#draft.map((point) => [point.x, point.z] as PointTuple),
         hover: this.#draftHover ? [this.#draftHover.x, this.#draftHover.z] : null,
       },
+      this.#prefabGhost && selectedAsset
+        ? { xM: this.#prefabGhost.x, zM: this.#prefabGhost.z, asset: selectedAsset }
+        : null,
     );
   }
 
   #renderInspector(): void {
     const model = this.#store.state.model;
-    const terrain = this.#store.state.terrain;
+    const terrain = this.#store.state.workingTerrain;
     const selected = this.#selectedId ? model?.get(this.#selectedId) : undefined;
-    if (selected && isGeometry(selected)) {
+    if (selected && model && terrain && (isGeometry(selected) || selected.kind === "prefab")) {
       this.#elements.inspectorTitle.textContent = selected.name;
       this.#elements.inspector.className = "object-inspector";
-      this.#elements.inspector.innerHTML = propertyForm(selected, this.#selectedVertex);
+      this.#elements.inspector.innerHTML = propertyForm(
+        selected,
+        this.#selectedVertex,
+        model,
+        this.#store.state.assetCatalog,
+        terrain,
+      );
       return;
     }
     this.#elements.inspectorTitle.textContent = "Terrain reference";
@@ -556,6 +735,7 @@ export class EditorApp {
       ["Cells", `${terrain.cellCountX.toLocaleString()} × ${terrain.cellCountZ.toLocaleString()}`],
       ["Places / land use", `${model.list("place").length.toLocaleString()} / ${model.list("land_use").length.toLocaleString()}`],
       ["Roads / hedgerows", `${model.list("road").length.toLocaleString()} / ${model.list("linear_feature").length.toLocaleString()}`],
+      ["Prefabs / catalogue", `${model.list("prefab").length.toLocaleString()} / ${(this.#store.state.assetCatalog?.assets.length ?? 0).toLocaleString()}`],
       ["Elevation range", `${terrain.minimumElevationM.toFixed(2)} — ${terrain.maximumElevationM.toFixed(2)} m`],
     ];
     this.#elements.inspector.className = "inspector-data";
@@ -584,13 +764,60 @@ export class EditorApp {
     };
   }
 
+  #prefabLayers(): { readonly prefabs: boolean; readonly terrainPads: boolean } {
+    return {
+      prefabs: this.#elements.layerPrefabs.checked,
+      terrainPads: this.#elements.layerTerrainPads.checked,
+    };
+  }
+
+  #authoringLayerChanged(): void {
+    const selected = this.#selectedId ? this.#store.state.model?.get(this.#selectedId) : undefined;
+    const remainsVisible = !selected || ((): boolean => {
+      switch (selected.kind) {
+        case "place": return this.#elements.layerPlaces.checked;
+        case "land_use": return this.#elements.layerLandUse.checked;
+        case "road": return this.#elements.layerRoads.checked;
+        case "linear_feature": return this.#elements.layerHedgerows.checked;
+        case "prefab": return this.#elements.layerPrefabs.checked;
+        default: return true;
+      }
+    })();
+    if (!remainsVisible) {
+      this.#selectedId = null;
+      this.#selectedVertex = null;
+    }
+    this.#renderInteraction();
+  }
+
   #resetInteraction(): void {
     this.#selectedId = null;
     this.#selectedVertex = null;
     this.#draft = [];
     this.#draftHover = null;
     this.#drag = null;
+    this.#prefabGhost = null;
     this.#tool = "select";
+  }
+
+  #renderAssetChoices(catalog: AssetCatalog | null): void {
+    const previous = this.#elements.assetSelect.value;
+    if (!catalog || catalog.assets.length === 0) {
+      this.#elements.assetSelect.innerHTML = `<option value="">No catalogue loaded</option>`;
+      this.#elements.assetSelect.disabled = true;
+      this.#elements.assetSummary.textContent = catalog ? "Catalogue contains no assets." : "Load the shared catalogue to enable proxy placement.";
+      return;
+    }
+    this.#elements.assetSelect.innerHTML = catalog.assets.map((asset) => (
+      `<option value="${escapeHtml(asset.asset_id)}">${escapeHtml(asset.display_name)} [${escapeHtml(asset.asset_id)}]</option>`
+    )).join("");
+    if (catalog.definition(previous)) this.#elements.assetSelect.value = previous;
+    this.#elements.assetSelect.disabled = false;
+    this.#elements.assetSummary.textContent = `${String(catalog.assets.length)} assets · ${String(new Set(catalog.assets.map((asset) => asset.category)).size)} proxy categories`;
+  }
+
+  #selectedAsset(): AssetDefinition | undefined {
+    return this.#store.state.assetCatalog?.definition(this.#elements.assetSelect.value);
   }
 
   #showDialogError(message: string): void {
@@ -599,7 +826,13 @@ export class EditorApp {
   }
 }
 
-function propertyForm(entity: GeometryEntity, selectedVertex: number | null): string {
+function propertyForm(
+  entity: GeometryEntity | PrefabInstance,
+  selectedVertex: number | null,
+  model: NonNullable<EditorState["model"]>,
+  catalog: AssetCatalog | null,
+  workingTerrain: WorkingTerrain,
+): string {
   const kind = entityKindLabel(entity);
   const locked = entity.locked;
   const fields: string[] = [
@@ -623,16 +856,69 @@ function propertyForm(entity: GeometryEntity, selectedVertex: number | null): st
       fields.push(numberField("Nominal width (m)", "nominal_width_m", entity.nominal_width_m));
       fields.push(numberField("Nominal height (m)", "nominal_height_m", entity.nominal_height_m));
       break;
+    case "prefab": {
+      const assets = catalog?.assets.map((asset) => ({ value: asset.asset_id, label: `${asset.display_name} [${asset.asset_id}]` })) ?? [];
+      if (!assets.some((asset) => asset.value === entity.asset_id)) {
+        assets.unshift({ value: entity.asset_id, label: `${entity.asset_id} [missing definition]` });
+      }
+      const roads = model.list("road")
+        .filter((item) => item.kind === "road")
+        .map((road) => ({ value: road.id, label: `${road.name} [${road.id.slice(0, 8)}]` }));
+      fields.push(selectOptionsField("Asset", "asset_id", entity.asset_id, assets));
+      fields.push(textField("Category", "category", entity.category));
+      fields.push(`<p class="property-heading">Transform</p>`);
+      fields.push(numberField("X (m)", "x_m", entity.x_m));
+      fields.push(numberField("Z (m)", "z_m", entity.z_m));
+      fields.push(numberField("Rotation (deg)", "rotation_deg", entity.rotation_deg));
+      fields.push(numberField("Scale", "scale", entity.scale));
+      fields.push(`<div class="property-inline-actions">
+        <button class="button" data-action="rotate-negative" type="button" ${locked ? "disabled" : ""}>Rotate −15°</button>
+        <button class="button" data-action="rotate-positive" type="button" ${locked ? "disabled" : ""}>Rotate +15°</button>
+      </div>`);
+      fields.push(`<p class="property-heading">Relationships</p>`);
+      fields.push(selectOptionsField("Frontage road", "frontage_road_id", entity.frontage_road_id ?? "", [
+        { value: "", label: "None" },
+        ...roads,
+      ]));
+      fields.push(`<p class="property-heading">Terrain pad</p>`);
+      fields.push(checkField("Enabled", "terrain_pad_enabled", entity.terrain_pad.enabled));
+      fields.push(numberField("Pad width (m)", "terrain_pad_width_m", entity.terrain_pad.width_m));
+      fields.push(numberField("Pad depth (m)", "terrain_pad_depth_m", entity.terrain_pad.depth_m));
+      fields.push(numberField("Blend distance (m)", "terrain_pad_blend_m", entity.terrain_pad.blend_m));
+      fields.push(`<p class="property-explanation">Target is always immutable base terrain at the prefab origin. Prefab scale does not scale pad dimensions.</p>`);
+      fields.push(`<div class="property-inline-actions"><button class="button" data-action="reset-pad" type="button" ${locked ? "disabled" : ""}>Reset to disabled placement default</button></div>`);
+      if (entity.terrain_pad.enabled) {
+        const points = prefabFootprint(
+          entity.x_m,
+          entity.z_m,
+          entity.terrain_pad.width_m,
+          entity.terrain_pad.depth_m,
+          entity.rotation_deg,
+        );
+        const site = workingTerrain.footprintSiteInfo(points, [entity.x_m, entity.z_m]);
+        fields.push(`<div class="site-information${site.footprintOutsideWorld ? " is-warning" : ""}">
+          Origin elevation: ${site.originElevationM.toFixed(2)} m<br />
+          Footprint min/max: ${site.minimumElevationM.toFixed(2)} / ${site.maximumElevationM.toFixed(2)} m<br />
+          Elevation range: ${site.elevationRangeM.toFixed(2)} m<br />
+          Max / average slope: ${site.maximumSlopeDeg.toFixed(2)}° / ${site.averageSlopeDeg.toFixed(2)}°
+          ${site.footprintOutsideWorld ? "<br />⚠ Part of the pad footprint lies outside the terrain world." : ""}
+        </div>`);
+      }
+      break;
+    }
   }
+  const meta = entity.kind === "prefab"
+    ? `${catalog?.definition(entity.asset_id) ? "resolved catalogue asset" : "missing catalogue asset"} · pad ${entity.terrain_pad.enabled ? "enabled" : "disabled"}${locked ? " · locked spatially" : ""}`
+    : `${entity.points.length.toLocaleString()} vertices${selectedVertex === null ? "" : ` · vertex ${String(selectedVertex + 1)} selected`}${locked ? " · locked spatially" : ""}`;
   return `
     <div class="object-kind"><strong>${escapeHtml(kind)}</strong><code title="${entity.id}">${entity.id}</code></div>
     <form class="property-form" data-property-form>
       ${fields.join("")}
-      <p class="property-meta">${entity.points.length.toLocaleString()} vertices${selectedVertex === null ? "" : ` · vertex ${String(selectedVertex + 1)} selected`}${locked ? " · locked spatially" : ""}</p>
+      <p class="property-meta">${meta}</p>
       <div class="property-error" data-property-error hidden></div>
       <div class="property-actions">
         <button class="button button-primary" type="submit">Apply properties</button>
-        <button class="button" data-action="delete-vertex" type="button" ${selectedVertex === null || locked ? "disabled" : ""}>Delete vertex</button>
+        ${entity.kind === "prefab" ? "" : `<button class="button" data-action="delete-vertex" type="button" ${selectedVertex === null || locked ? "disabled" : ""}>Delete vertex</button>`}
         <button class="button button-danger" data-action="delete-object" type="button" ${locked ? "disabled" : ""}>Delete object</button>
       </div>
     </form>`;
@@ -654,12 +940,22 @@ function selectField(label: string, name: string, value: string, values: readonl
   return `<label for="property-${name}">${label}</label><select id="property-${name}" name="${name}">${values.map((option) => `<option value="${option}" ${option === value ? "selected" : ""}>${labelFor(option)}</option>`).join("")}</select>`;
 }
 
-function entityKindLabel(entity: GeometryEntity): string {
+function selectOptionsField(
+  label: string,
+  name: string,
+  value: string,
+  values: readonly { readonly value: string; readonly label: string }[],
+): string {
+  return `<label for="property-${name}">${label}</label><select id="property-${name}" name="${name}">${values.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`;
+}
+
+function entityKindLabel(entity: GeometryEntity | PrefabInstance): string {
   switch (entity.kind) {
     case "place": return "Place region";
     case "land_use": return entity.land_use_type === "woodland" ? "Woodland region" : "Land-use region";
     case "road": return "Native road";
     case "linear_feature": return "Hedgerow";
+    case "prefab": return "Prefab instance";
   }
 }
 
@@ -675,16 +971,37 @@ function requiredNumber(data: FormData, name: string): number {
   return value;
 }
 
+function optionalText(data: FormData, name: string): string | null {
+  const value = data.get(name);
+  if (typeof value !== "string") return null;
+  return value.trim() || null;
+}
+
 function isTool(value: string | undefined): value is Tool {
   return value === "select"
     || value === "road"
     || value === "hedgerow"
+    || value === "prefab"
     || PLACE_TYPES.some((kind) => value === `place:${kind}`)
     || LAND_USE_TYPES.some((kind) => value === `land:${kind}`);
 }
 
 function isGeometry(entity: AuthoredEntity): entity is GeometryEntity {
   return entity.kind === "place" || entity.kind === "land_use" || entity.kind === "road" || entity.kind === "linear_feature";
+}
+
+function prefabSpatialFieldsChanged(before: PrefabInstance, after: PrefabInstance): boolean {
+  return before.asset_id !== after.asset_id
+    || before.category !== after.category
+    || before.x_m !== after.x_m
+    || before.z_m !== after.z_m
+    || before.rotation_deg !== after.rotation_deg
+    || before.scale !== after.scale
+    || JSON.stringify(before.terrain_pad) !== JSON.stringify(after.terrain_pad);
+}
+
+function normalizeDegrees(value: number): number {
+  return ((value % 360) + 360) % 360;
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {

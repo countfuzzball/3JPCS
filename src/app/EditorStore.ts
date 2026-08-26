@@ -5,14 +5,18 @@ import {
   createRemoveCommand,
   type ModelCommand,
 } from "../history/CommandHistory";
+import type { AssetCatalog } from "../model/assetCatalog";
 import type { AuthoredEntity } from "../model/entities";
 import { ProjectModel } from "../model/ProjectModel";
 import type { ProjectDocumentV4 } from "../model/projectDto";
 import type { TerrainReference } from "../terrain/TerrainReference";
+import { WorkingTerrain } from "../terrain/WorkingTerrain";
 
 export interface EditorState {
   readonly model: ProjectModel | null;
   readonly terrain: TerrainReference | null;
+  readonly workingTerrain: WorkingTerrain | null;
+  readonly assetCatalog: AssetCatalog | null;
   readonly dirty: boolean;
   readonly revision: number;
   readonly canUndo: boolean;
@@ -28,6 +32,8 @@ export class EditorStore {
   readonly #history = new CommandHistory();
   #model: ProjectModel | null = null;
   #terrain: TerrainReference | null = null;
+  #workingTerrain: WorkingTerrain | null = null;
+  #assetCatalog: AssetCatalog | null = null;
   #dirty = false;
   #revision = 0;
 
@@ -35,6 +41,8 @@ export class EditorStore {
     return {
       model: this.#model,
       terrain: this.#terrain,
+      workingTerrain: this.#workingTerrain,
+      assetCatalog: this.#assetCatalog,
       dirty: this.#dirty,
       revision: this.#revision,
       canUndo: this.#history.canUndo,
@@ -56,6 +64,7 @@ export class EditorStore {
     sourceNames: { readonly npy: string; readonly descriptor: string },
   ): void {
     this.#terrain = terrain;
+    this.#assetCatalog = null;
     this.#model = ProjectModel.create({
       name: name.trim() || "Untitled Scenery",
       world: {
@@ -73,6 +82,7 @@ export class EditorStore {
       terrain_fingerprint: terrain.fingerprint,
     });
     this.#history.clear();
+    this.#recomposeWorkingTerrain();
     this.#dirty = true;
     this.#changed();
   }
@@ -93,8 +103,10 @@ export class EditorStore {
 
   public recordAppliedUpdate(before: AuthoredEntity, after: AuthoredEntity, label: string): boolean {
     const model = this.#requireModel();
-    const recorded = this.#history.recordApplied(model, new UpdateEntityCommand(label, before, after));
+    const command = new UpdateEntityCommand(label, before, after);
+    const recorded = this.#history.recordApplied(model, command);
     if (recorded) {
+      if (command.affectsWorkingTerrain) this.#recomposeWorkingTerrain();
       this.#dirty = true;
       this.#changed();
     }
@@ -106,10 +118,20 @@ export class EditorStore {
     return this.#execute(createRemoveCommand(model, id, label));
   }
 
+  public setAssetCatalog(catalog: AssetCatalog, sourceName: string): void {
+    const model = this.#requireModel();
+    this.#assetCatalog = catalog;
+    model.setAssetCatalogSource(sourceName);
+    this.#dirty = true;
+    this.#changed();
+  }
+
   public undo(): string | null {
     const model = this.#requireModel();
+    const affectsWorkingTerrain = this.#history.undoAffectsWorkingTerrain;
     const label = this.#history.undo(model);
     if (label) {
+      if (affectsWorkingTerrain) this.#recomposeWorkingTerrain();
       this.#dirty = true;
       this.#changed();
     }
@@ -118,8 +140,10 @@ export class EditorStore {
 
   public redo(): string | null {
     const model = this.#requireModel();
+    const affectsWorkingTerrain = this.#history.redoAffectsWorkingTerrain;
     const label = this.#history.redo(model);
     if (label) {
+      if (affectsWorkingTerrain) this.#recomposeWorkingTerrain();
       this.#dirty = true;
       this.#changed();
     }
@@ -134,6 +158,7 @@ export class EditorStore {
     const model = this.#requireModel();
     const executed = this.#history.execute(model, command);
     if (executed) {
+      if (command.affectsWorkingTerrain) this.#recomposeWorkingTerrain();
       this.#dirty = true;
       this.#changed();
     }
@@ -143,6 +168,14 @@ export class EditorStore {
   #requireModel(): ProjectModel {
     if (!this.#model) throw new Error("no active scenery project");
     return this.#model;
+  }
+
+  #recomposeWorkingTerrain(): void {
+    if (!this.#terrain || !this.#model) {
+      this.#workingTerrain = null;
+      return;
+    }
+    this.#workingTerrain = WorkingTerrain.compose(this.#terrain, this.#model.prefabInstances());
   }
 
   #changed(): void {

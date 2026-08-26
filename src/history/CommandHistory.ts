@@ -4,18 +4,22 @@ import { ProjectModel } from "../model/ProjectModel";
 export interface ModelCommand {
   readonly label: string;
   readonly isNoop: boolean;
+  readonly affectsWorkingTerrain: boolean;
   apply(model: ProjectModel): void;
   revert(model: ProjectModel): void;
 }
 
 export class AddEntityCommand implements ModelCommand {
   public readonly isNoop = false;
+  public readonly affectsWorkingTerrain: boolean;
 
   public constructor(
     public readonly label: string,
     public readonly entity: AuthoredEntity,
     public readonly index?: number,
-  ) {}
+  ) {
+    this.affectsWorkingTerrain = activeTerrainPad(entity);
+  }
 
   public apply(model: ProjectModel): void {
     model.insert(this.entity, this.index);
@@ -28,6 +32,7 @@ export class AddEntityCommand implements ModelCommand {
 
 export class UpdateEntityCommand implements ModelCommand {
   public readonly isNoop: boolean;
+  public readonly affectsWorkingTerrain: boolean;
 
   public constructor(
     public readonly label: string,
@@ -35,6 +40,7 @@ export class UpdateEntityCommand implements ModelCommand {
     public readonly after: AuthoredEntity,
   ) {
     this.isNoop = recordsEqual(before, after);
+    this.affectsWorkingTerrain = prefabTerrainFieldsChanged(before, after);
   }
 
   public apply(model: ProjectModel): void {
@@ -48,12 +54,15 @@ export class UpdateEntityCommand implements ModelCommand {
 
 export class RemoveEntityCommand implements ModelCommand {
   public readonly isNoop = false;
+  public readonly affectsWorkingTerrain: boolean;
 
   public constructor(
     public readonly label: string,
     public readonly entity: AuthoredEntity,
     public readonly index: number,
-  ) {}
+  ) {
+    this.affectsWorkingTerrain = activeTerrainPad(entity);
+  }
 
   public apply(model: ProjectModel): void {
     model.remove(this.entity.id);
@@ -66,12 +75,14 @@ export class RemoveEntityCommand implements ModelCommand {
 
 export class CompositeCommand implements ModelCommand {
   public readonly isNoop: boolean;
+  public readonly affectsWorkingTerrain: boolean;
 
   public constructor(
     public readonly label: string,
     public readonly commands: readonly ModelCommand[],
   ) {
     this.isNoop = commands.every((command) => command.isNoop);
+    this.affectsWorkingTerrain = commands.some((command) => command.affectsWorkingTerrain);
   }
 
   public apply(model: ProjectModel): void {
@@ -91,6 +102,8 @@ export class CommandHistory {
   public get canRedo(): boolean { return this.#redo.length > 0; }
   public get undoLabel(): string | null { return this.#undo.at(-1)?.label ?? null; }
   public get redoLabel(): string | null { return this.#redo.at(-1)?.label ?? null; }
+  public get undoAffectsWorkingTerrain(): boolean { return this.#undo.at(-1)?.affectsWorkingTerrain ?? false; }
+  public get redoAffectsWorkingTerrain(): boolean { return this.#redo.at(-1)?.affectsWorkingTerrain ?? false; }
 
   public clear(): void {
     this.#undo.length = 0;
@@ -148,6 +161,22 @@ export function createRemoveCommand(model: ProjectModel, id: string, label: stri
   return commands.length === 1 && only ? only : new CompositeCommand(label, commands);
 }
 
-function recordsEqual(left: AuthoredEntity, right: AuthoredEntity): boolean {
+function recordsEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function activeTerrainPad(entity: AuthoredEntity): boolean {
+  return entity.kind === "prefab" && entity.visible && entity.terrain_pad.enabled;
+}
+
+function prefabTerrainFieldsChanged(before: AuthoredEntity, after: AuthoredEntity): boolean {
+  if (before.kind !== "prefab" || after.kind !== "prefab") return false;
+  const beforeActive = before.visible && before.terrain_pad.enabled;
+  const afterActive = after.visible && after.terrain_pad.enabled;
+  if (!beforeActive && !afterActive) return false;
+  return before.x_m !== after.x_m
+    || before.z_m !== after.z_m
+    || before.rotation_deg !== after.rotation_deg
+    || before.visible !== after.visible
+    || !recordsEqual(before.terrain_pad, after.terrain_pad);
 }

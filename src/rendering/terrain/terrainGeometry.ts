@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import type { TerrainReference } from "../../terrain/TerrainReference";
+import type { TerrainSurface } from "../../terrain/TerrainSurface";
 
-export function buildTerrainGeometry(terrain: TerrainReference): THREE.BufferGeometry {
+export function buildTerrainGeometry(terrain: TerrainSurface): THREE.BufferGeometry {
   const positions = new Float32Array(terrain.pointCountX * terrain.pointCountZ * 3);
   const uvs = new Float32Array(terrain.pointCountX * terrain.pointCountZ * 2);
   let vertexOffset = 0;
@@ -43,4 +43,19 @@ export function buildTerrainGeometry(terrain: TerrainReference): THREE.BufferGeo
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+export function updateTerrainGeometryHeights(geometry: THREE.BufferGeometry, terrain: TerrainSurface): void {
+  const position = geometry.getAttribute("position");
+  if (!(position instanceof THREE.BufferAttribute) || position.count !== terrain.pointCountX * terrain.pointCountZ) {
+    throw new Error("terrain geometry topology does not match the derived surface");
+  }
+  for (let z = 0; z < terrain.pointCountZ; z += 1) {
+    for (let x = 0; x < terrain.pointCountX; x += 1) {
+      position.setY(z * terrain.pointCountX + x, terrain.heightAtGrid(x, z));
+    }
+  }
+  position.needsUpdate = true;
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
 }

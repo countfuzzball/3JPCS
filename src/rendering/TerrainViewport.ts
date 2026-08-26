@@ -1,7 +1,8 @@
 import * as THREE from "three";
+import type { AssetCatalog } from "../model/assetCatalog";
 import type { PointXZ } from "../model/coordinates";
 import type { ProjectModel } from "../model/ProjectModel";
-import type { TerrainReference } from "../terrain/TerrainReference";
+import type { TerrainSurface } from "../terrain/TerrainSurface";
 import {
   fitOrthographicView,
   panViewByPixels,
@@ -11,10 +12,15 @@ import {
   type OrthographicView,
   type ViewportSize,
 } from "../interaction/orthographicMath";
-import { buildTerrainGeometry } from "./terrain/terrainGeometry";
+import { buildTerrainGeometry, updateTerrainGeometryHeights } from "./terrain/terrainGeometry";
 import { buildTerrainTexture, type TerrainLayerState } from "./terrain/terrainTexture";
 import { GeometryRenderAdapter, type DraftProjection } from "./GeometryRenderAdapter";
 import type { GeometryLayerState } from "../interaction/geometryEditing";
+import {
+  PrefabRenderAdapter,
+  type PrefabGhostProjection,
+  type PrefabLayerState,
+} from "./PrefabRenderAdapter";
 
 export interface PrimaryPointerIntent {
   readonly point: PointXZ;
@@ -44,7 +50,8 @@ export class TerrainViewport {
   readonly #resizeObserver: ResizeObserver;
   readonly #callbacks: TerrainViewportCallbacks;
   readonly #geometry = new GeometryRenderAdapter();
-  #terrain: TerrainReference | null = null;
+  readonly #prefabs = new PrefabRenderAdapter();
+  #terrain: TerrainSurface | null = null;
   #terrainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null;
   #border: THREE.LineLoop | null = null;
   #layers: TerrainLayerState = { terrain: true, hillshade: true, contours: true };
@@ -67,15 +74,29 @@ export class TerrainViewport {
     this.#camera.up.set(0, 0, -1);
     this.#scene.add(new THREE.AmbientLight(0xffffff, 1));
     this.#scene.add(this.#geometry.group);
+    this.#scene.add(this.#prefabs.group);
     this.#bindEvents();
     this.#resizeObserver = new ResizeObserver(() => this.#resize());
     this.#resizeObserver.observe(this.#host);
     this.#resize();
   }
 
-  public setTerrain(terrain: TerrainReference): void {
-    this.#disposeTerrain();
+  public setTerrain(terrain: TerrainSurface, preserveView = false): void {
+    const compatible = this.#terrainMesh !== null
+      && this.#terrain?.pointCountX === terrain.pointCountX
+      && this.#terrain.pointCountZ === terrain.pointCountZ
+      && this.#terrain.spacingM === terrain.spacingM;
     this.#terrain = terrain;
+    if (compatible && this.#terrainMesh) {
+      updateTerrainGeometryHeights(this.#terrainMesh.geometry, terrain);
+      this.#terrainMesh.material.map?.dispose();
+      this.#terrainMesh.material.map = buildTerrainTexture(terrain, this.#layers);
+      this.#terrainMesh.material.needsUpdate = true;
+      if (preserveView) this.#updateCamera();
+      else this.fitTerrain();
+      return;
+    }
+    this.#disposeTerrain();
     const geometry = buildTerrainGeometry(terrain);
     const texture = buildTerrainTexture(terrain, this.#layers);
     const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide });
@@ -84,7 +105,8 @@ export class TerrainViewport {
     this.#scene.add(this.#terrainMesh);
     this.#border = this.#createBorder(terrain);
     this.#scene.add(this.#border);
-    this.fitTerrain();
+    if (preserveView) this.#updateCamera();
+    else this.fitTerrain();
   }
 
   public setLayers(layers: TerrainLayerState): void {
@@ -99,16 +121,27 @@ export class TerrainViewport {
 
   public setAuthoringProjection(
     model: ProjectModel | null,
+    catalog: AssetCatalog | null,
     selectedId: string | null,
     selectedVertex: number | null,
-    layers: GeometryLayerState,
+    geometryLayers: GeometryLayerState,
+    prefabLayers: PrefabLayerState,
     draft: DraftProjection,
+    ghost: PrefabGhostProjection | null,
   ): void {
     const terrain = this.#terrain;
     const overlayY = terrain
       ? terrain.maximumElevationM + Math.max(1, (terrain.maximumElevationM - terrain.minimumElevationM) * 0.01)
       : 1;
-    this.#geometry.sync(model?.geometryEntities() ?? [], selectedId, selectedVertex, layers, draft, overlayY);
+    this.#geometry.sync(model?.geometryEntities() ?? [], selectedId, selectedVertex, geometryLayers, draft, overlayY);
+    this.#prefabs.sync(
+      (model?.list("prefab") ?? []).filter((entity) => entity.kind === "prefab"),
+      catalog,
+      selectedId,
+      prefabLayers,
+      ghost,
+      overlayY,
+    );
     this.invalidate();
   }
 
@@ -151,7 +184,9 @@ export class TerrainViewport {
     }
     this.#disposeTerrain();
     this.#geometry.dispose();
+    this.#prefabs.dispose();
     this.#scene.remove(this.#geometry.group);
+    this.#scene.remove(this.#prefabs.group);
     this.#renderer.dispose();
     this.#renderer.domElement.remove();
   }
@@ -295,7 +330,7 @@ export class TerrainViewport {
     this.invalidate();
   }
 
-  #createBorder(terrain: TerrainReference): THREE.LineLoop {
+  #createBorder(terrain: TerrainSurface): THREE.LineLoop {
     const offset = terrain.maximumElevationM + Math.max(1, (terrain.maximumElevationM - terrain.minimumElevationM) * 0.002);
     const geometry = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, offset, 0),

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { TerrainReference } from "../../terrain/TerrainReference";
+import type { TerrainSurface } from "../../terrain/TerrainSurface";
 
 export interface TerrainLayerState {
   readonly terrain: boolean;
@@ -8,7 +8,7 @@ export interface TerrainLayerState {
 }
 
 export function buildTerrainTexture(
-  terrain: TerrainReference,
+  terrain: TerrainSurface,
   layers: TerrainLayerState,
 ): THREE.DataTexture {
   const pixels = buildTerrainPixels(terrain, layers);
@@ -27,7 +27,7 @@ export function buildTerrainTexture(
   return texture;
 }
 
-export function buildTerrainPixels(terrain: TerrainReference, layers: TerrainLayerState): Uint8Array {
+export function buildTerrainPixels(terrain: TerrainSurface, layers: TerrainLayerState): Uint8Array {
   const pixels = new Uint8Array(terrain.pointCountX * terrain.pointCountZ * 4);
   const contourInterval = chooseContourInterval(terrain);
   for (let z = 0; z < terrain.pointCountZ; z += 1) {
@@ -56,7 +56,7 @@ export function buildTerrainPixels(terrain: TerrainReference, layers: TerrainLay
   return pixels;
 }
 
-function elevationColor(terrain: TerrainReference, height: number): [number, number, number] {
+function elevationColor(terrain: TerrainSurface, height: number): [number, number, number] {
   const span = Math.max(1e-9, terrain.maximumElevationM - terrain.minimumElevationM);
   const normalized = Math.max(0, Math.min(1, (height - terrain.minimumElevationM) / span));
   if (height < terrain.seaLevelM) {
@@ -69,7 +69,7 @@ function elevationColor(terrain: TerrainReference, height: number): [number, num
   return [62 + 155 * land + 7 * normalized, 105 + 120 * land + 7 * normalized, 58 + 155 * land + 7 * normalized];
 }
 
-function hillshadeAt(terrain: TerrainReference, x: number, z: number): number {
+function hillshadeAt(terrain: TerrainSurface, x: number, z: number): number {
   const left = terrain.heightAtGrid(Math.max(0, x - 1), z);
   const right = terrain.heightAtGrid(Math.min(terrain.pointCountX - 1, x + 1), z);
   const north = terrain.heightAtGrid(x, Math.max(0, z - 1));
@@ -87,7 +87,7 @@ function hillshadeAt(terrain: TerrainReference, x: number, z: number): number {
   return Math.max(0, Math.min(1, (shade + 1) / 2));
 }
 
-function chooseContourInterval(terrain: TerrainReference): number {
+function chooseContourInterval(terrain: TerrainSurface): number {
   const candidates = [1, 2, 5, 10, 20, 50, 100, 200, 500];
   const span = Math.max(1, terrain.maximumElevationM - terrain.minimumElevationM);
   const target = span / 18;
@@ -96,7 +96,7 @@ function chooseContourInterval(terrain: TerrainReference): number {
   ));
 }
 
-function isContourPoint(terrain: TerrainReference, x: number, z: number, interval: number): boolean {
+function isContourPoint(terrain: TerrainSurface, x: number, z: number, interval: number): boolean {
   const band = Math.floor(terrain.heightAtGrid(x, z) / interval);
   if (x > 0 && Math.floor(terrain.heightAtGrid(x - 1, z) / interval) !== band) {
     return true;

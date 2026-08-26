@@ -96,10 +96,21 @@ button { color: inherit; }
 .tool-grid .tool-symbol { width: 19px; height: 19px; font: 10px ui-monospace, monospace; }
 .tool-grid .tool-button strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .tool-group-label { margin: 7px 1px 0; color: #687679; font: 8px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.prefab-section { display: grid; gap: 7px; }
+.prefab-section .section-heading { margin-bottom: 5px; }
+.catalogue-picker { display: block; padding: 9px 10px; border: 1px dashed #475558; background: #11191b; cursor: pointer; }
+.catalogue-picker:hover { border-color: var(--accent); }
+.catalogue-picker strong { display: block; color: #d2dcde; font-size: 10px; }
+.catalogue-picker small { display: block; margin: 3px 0 7px; color: #6f7d80; font-size: 8px; line-height: 1.4; }
+.catalogue-picker input { width: 100%; color: #829093; font-size: 8px; }
+.catalogue-picker input::file-selector-button { padding: 4px 6px; border: 1px solid #3d4b4e; border-radius: 2px; background: #1b2629; color: #bcc7c9; cursor: pointer; font-size: 8px; }
+.compact-label { margin: 4px 0 0; }
+.asset-select { width: 100%; height: 31px; padding: 0 7px; border: 1px solid #3b494c; border-radius: 2px; background: #0e1618; color: #dbe4e6; font-size: 9px; }
+.asset-summary { margin: 0; color: #728083; font-size: 8px; line-height: 1.45; }
 
-.layer-row { display: grid; grid-template-columns: 17px 16px minmax(0, 1fr); align-items: center; gap: 8px; margin: 3px 0; padding: 7px 6px; border: 1px solid transparent; border-radius: 3px; cursor: pointer; }
+.layer-row { position: relative; display: grid; grid-template-columns: 17px 16px minmax(0, 1fr); align-items: center; gap: 8px; margin: 3px 0; padding: 7px 6px; border: 1px solid transparent; border-radius: 3px; cursor: pointer; }
 .layer-row:hover { border-color: #354246; background: #192225; }
-.layer-row input { position: absolute; opacity: 0; }
+.layer-row input { position: absolute; top: 50%; left: 6px; width: 14px; height: 14px; margin: 0; transform: translateY(-50%); opacity: 0; }
 .layer-check { width: 14px; height: 14px; border: 1px solid #506064; border-radius: 2px; background: #0f1618; }
 .layer-row input:checked + .layer-check { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px #0f1618; }
 .layer-swatch { width: 11px; height: 11px; border-radius: 50%; }
@@ -110,6 +121,8 @@ button { color: inherit; }
 .land-use-swatch { background: #4f8d5f; }
 .roads-swatch { border-radius: 1px; background: linear-gradient(0deg, transparent 35%, #a17c5f 35% 65%, transparent 65%); }
 .hedgerows-swatch { border-radius: 1px; background: repeating-linear-gradient(90deg, #5b965d 0 3px, transparent 3px 5px); }
+.prefabs-swatch { border: 1px solid #e79962; border-radius: 1px; background: rgb(231 153 98 / 20%); }
+.pads-swatch { border: 1px dashed #5fd9eb; border-radius: 1px; background: transparent; }
 
 .navigation-help dl { margin: 0; }
 .navigation-help dl div { display: flex; align-items: center; justify-content: space-between; padding: 6px 2px; border-bottom: 1px dotted #2d393c; }
@@ -165,6 +178,11 @@ button { color: inherit; }
 .property-form input[type="text"], .property-form input[type="number"], .property-form select { width: 100%; min-width: 0; height: 30px; padding: 0 7px; border: 1px solid #3b494c; border-radius: 2px; background: #0e1618; color: #dbe4e6; font-size: 10px; }
 .property-form input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
 .property-form .property-check { display: flex; align-items: center; gap: 7px; }
+.property-heading { grid-column: 1 / -1; margin: 7px 0 1px; padding-top: 8px; border-top: 1px solid var(--line-soft); color: var(--cyan); font: 8px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.property-explanation, .site-information { grid-column: 1 / -1; margin: 1px 0; color: #6f7d80; font-size: 8px; line-height: 1.5; }
+.site-information { padding: 8px; border: 1px solid #334144; background: #11191b; }
+.site-information.is-warning { border-color: #765342; color: #e2a77d; }
+.property-inline-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .property-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
 .property-actions .button:first-child { grid-column: 1 / -1; }
 .property-actions .button-danger { border-color: #6f3e3a; color: #ffaaa2; }
