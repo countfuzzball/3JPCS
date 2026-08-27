@@ -1,5 +1,8 @@
 export interface EditorElements {
   readonly newProjectButton: HTMLButtonElement;
+  readonly openProjectButton: HTMLButtonElement;
+  readonly saveButton: HTMLButtonElement;
+  readonly saveAsButton: HTMLButtonElement;
   readonly fitButton: HTMLButtonElement;
   readonly undoButton: HTMLButtonElement;
   readonly redoButton: HTMLButtonElement;
@@ -8,6 +11,14 @@ export interface EditorElements {
   readonly assetCatalogInput: HTMLInputElement;
   readonly assetSelect: HTMLSelectElement;
   readonly assetSummary: HTMLElement;
+  readonly vegetationInput: HTMLInputElement;
+  readonly countyInput: HTMLInputElement;
+  readonly vegetationSummary: HTMLElement;
+  readonly countySummary: HTMLElement;
+  readonly convertCountyButton: HTMLButtonElement;
+  readonly exportRuntimeButton: HTMLButtonElement;
+  readonly exportTerrainButton: HTMLButtonElement;
+  readonly exportVegetationButton: HTMLButtonElement;
   readonly dialog: HTMLDialogElement;
   readonly projectForm: HTMLFormElement;
   readonly projectName: HTMLInputElement;
@@ -26,6 +37,22 @@ export interface EditorElements {
   readonly layerHedgerows: HTMLInputElement;
   readonly layerPrefabs: HTMLInputElement;
   readonly layerTerrainPads: HTMLInputElement;
+  readonly layerVegetationReference: HTMLInputElement;
+  readonly layerCountySettlements: HTMLInputElement;
+  readonly layerCountyRoads: HTMLInputElement;
+  readonly layerCountyBuildings: HTMLInputElement;
+  readonly warningsPanel: HTMLElement;
+  readonly openDialog: HTMLDialogElement;
+  readonly openForm: HTMLFormElement;
+  readonly openProjectInput: HTMLInputElement;
+  readonly openCompanionsInput: HTMLInputElement;
+  readonly openNpyInput: HTMLInputElement;
+  readonly openDescriptorInput: HTMLInputElement;
+  readonly openVegetationInput: HTMLInputElement;
+  readonly openCountyInput: HTMLInputElement;
+  readonly openCatalogInput: HTMLInputElement;
+  readonly openDialogError: HTMLElement;
+  readonly openButton: HTMLButtonElement;
   readonly projectTitle: HTMLElement;
   readonly dirtyMarker: HTMLElement;
   readonly projectState: HTMLElement;
@@ -51,8 +78,9 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         </div>
         <nav class="command-bar" aria-label="Project commands">
           <button id="new-project" class="button button-primary" type="button"><span class="button-icon">＋</span> New terrain project</button>
-          <button class="button" type="button" disabled title="Project opening is delivered in Milestone 4">Open</button>
-          <button class="button" type="button" disabled title="Project saving is delivered in Milestone 4">Save</button>
+          <button id="open-project" class="button" type="button">Open</button>
+          <button id="save-project" class="button" type="button" disabled>Save</button>
+          <button id="save-project-as" class="button" type="button" disabled>Save as</button>
           <span class="command-divider"></span>
           <button id="undo" class="button" type="button" disabled><span class="keycap">Ctrl Z</span> Undo</button>
           <button id="redo" class="button" type="button" disabled><span class="keycap">Ctrl Y</span> Redo</button>
@@ -115,8 +143,29 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
             ${layerToggle("layer-prefabs", "Prefabs", "Catalogue proxy footprints", "prefabs-swatch")}
             ${layerToggle("layer-terrain-pads", "Terrain pads", "Core and blend extents", "pads-swatch")}
           </section>
+          <section class="panel-section reference-section">
+            <div class="section-heading"><span>05</span><h2>Reference sources</h2></div>
+            <label class="compact-file" for="vegetation-reference-file"><strong>Vegetation v1</strong><input id="vegetation-reference-file" type="file" accept=".json,application/json" /></label>
+            <p id="vegetation-summary" class="asset-summary">No imported vegetation reference.</p>
+            <label class="compact-file" for="county-reference-file"><strong>County features v3</strong><input id="county-reference-file" type="file" accept=".json,application/json" /></label>
+            <p id="county-summary" class="asset-summary">No county reference.</p>
+            <button id="convert-county" class="button" type="button" disabled>Convert county to native</button>
+          </section>
+          <section class="panel-section layers-section">
+            <div class="section-heading"><span>06</span><h2>Reference layers</h2></div>
+            ${layerToggle("layer-vegetation-reference", "Imported vegetation", "Single GPU points batch", "vegetation-swatch")}
+            ${layerToggle("layer-county-settlements", "County settlements", "Dashed reference regions", "county-settlements-swatch")}
+            ${layerToggle("layer-county-roads", "County roads", "Dashed reference lines", "county-roads-swatch")}
+            ${layerToggle("layer-county-buildings", "County buildings", "Source footprint outlines", "county-buildings-swatch")}
+          </section>
+          <section class="panel-section export-section">
+            <div class="section-heading"><span>07</span><h2>Exports</h2></div>
+            <button id="export-runtime" class="button" type="button" disabled>Runtime scenery v2</button>
+            <button id="export-terrain" class="button" type="button" disabled>Final terrain PNG + JSON</button>
+            <button id="export-vegetation" class="button" type="button" disabled>Resampled vegetation v1</button>
+          </section>
           <section class="panel-section navigation-help">
-            <div class="section-heading"><span>05</span><h2>Shortcuts</h2></div>
+            <div class="section-heading"><span>08</span><h2>Shortcuts</h2></div>
             <dl>
               <div><dt>Finish / cancel</dt><dd><kbd>Enter</kbd> / <kbd>Esc</kbd></dd></div>
               <div><dt>Draft point</dt><dd><kbd>Backspace</kbd></dd></div>
@@ -153,6 +202,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
             <h3>No terrain loaded</h3>
             <p>World dimensions, grid topology, elevation range, and the source fingerprint appear here.</p>
           </section>
+          <section id="project-warnings" class="project-warnings" hidden></section>
           <section class="contract-card">
             <p class="eyebrow">COORDINATE CONTRACT</p>
             <div class="axis-diagram" aria-label="X east, Z south, Y elevation">
@@ -168,7 +218,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         <div class="status-metric"><span>X / Z</span><strong id="status-coordinates">—</strong></div>
         <div class="status-metric"><span>ELEVATION</span><strong id="status-elevation">—</strong></div>
         <div class="status-metric"><span>SLOPE</span><strong id="status-slope">—</strong></div>
-        <div class="status-build">MILESTONES 0–3</div>
+        <div class="status-build">MILESTONES 0–4</div>
       </footer>
     </main>
 
@@ -198,6 +248,35 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         </div>
       </form>
     </dialog>
+
+    <dialog id="open-project-dialog" class="project-dialog open-project-dialog">
+      <form id="open-project-form" method="dialog">
+        <div class="dialog-heading">
+          <div><p class="eyebrow">OPEN SCENERY PROJECT</p><h2>Relink browser-readable sources</h2></div>
+          <button class="icon-button" value="cancel" aria-label="Close open dialog" type="submit">×</button>
+        </div>
+        <p class="dialog-intro">Select the editable project and its source files. Saved paths are hints only; explicit relinks are required for absolute or moved paths.</p>
+        <label class="field-label" for="open-project-file">Scenery project JSON</label>
+        <input id="open-project-file" type="file" accept=".json,application/json" required />
+        <label class="field-label open-field" for="open-companion-files">Companion files for relative-name matching</label>
+        <input id="open-companion-files" type="file" multiple />
+        <details class="relink-details" open>
+          <summary>Explicit source relinks</summary>
+          <div class="relink-grid">
+            ${relinkField("open-terrain-npy", "Terrain NPY", ".npy,application/octet-stream")}
+            ${relinkField("open-terrain-descriptor", "Terrain descriptor", ".json,application/json")}
+            ${relinkField("open-vegetation", "Vegetation (optional)", ".json,application/json")}
+            ${relinkField("open-county", "County features (optional)", ".json,application/json")}
+            ${relinkField("open-catalog", "Asset catalogue (optional)", ".json,application/json")}
+          </div>
+        </details>
+        <div id="open-dialog-error" class="dialog-error" role="alert" hidden></div>
+        <div class="dialog-actions">
+          <button class="button" value="cancel" type="submit">Cancel</button>
+          <button id="open-project-confirm" class="button button-primary" value="default" type="submit">Validate &amp; open</button>
+        </div>
+      </form>
+    </dialog>
   `;
 
   const byId = <T extends HTMLElement>(id: string, elementType: new () => T): T => {
@@ -212,6 +291,9 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
 
   return {
     newProjectButton,
+    openProjectButton: byId("open-project", HTMLButtonElement),
+    saveButton: byId("save-project", HTMLButtonElement),
+    saveAsButton: byId("save-project-as", HTMLButtonElement),
     fitButton: byId("fit-terrain", HTMLButtonElement),
     undoButton: byId("undo", HTMLButtonElement),
     redoButton: byId("redo", HTMLButtonElement),
@@ -220,6 +302,14 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     assetCatalogInput: byId("asset-catalog-file", HTMLInputElement),
     assetSelect: byId("asset-select", HTMLSelectElement),
     assetSummary: byId("asset-summary", HTMLElement),
+    vegetationInput: byId("vegetation-reference-file", HTMLInputElement),
+    countyInput: byId("county-reference-file", HTMLInputElement),
+    vegetationSummary: byId("vegetation-summary", HTMLElement),
+    countySummary: byId("county-summary", HTMLElement),
+    convertCountyButton: byId("convert-county", HTMLButtonElement),
+    exportRuntimeButton: byId("export-runtime", HTMLButtonElement),
+    exportTerrainButton: byId("export-terrain", HTMLButtonElement),
+    exportVegetationButton: byId("export-vegetation", HTMLButtonElement),
     dialog: byId("new-project-dialog", HTMLDialogElement),
     projectForm: byId("new-project-form", HTMLFormElement),
     projectName: byId("project-name", HTMLInputElement),
@@ -238,6 +328,22 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     layerHedgerows: byId("layer-hedgerows", HTMLInputElement),
     layerPrefabs: byId("layer-prefabs", HTMLInputElement),
     layerTerrainPads: byId("layer-terrain-pads", HTMLInputElement),
+    layerVegetationReference: byId("layer-vegetation-reference", HTMLInputElement),
+    layerCountySettlements: byId("layer-county-settlements", HTMLInputElement),
+    layerCountyRoads: byId("layer-county-roads", HTMLInputElement),
+    layerCountyBuildings: byId("layer-county-buildings", HTMLInputElement),
+    warningsPanel: byId("project-warnings", HTMLElement),
+    openDialog: byId("open-project-dialog", HTMLDialogElement),
+    openForm: byId("open-project-form", HTMLFormElement),
+    openProjectInput: byId("open-project-file", HTMLInputElement),
+    openCompanionsInput: byId("open-companion-files", HTMLInputElement),
+    openNpyInput: byId("open-terrain-npy", HTMLInputElement),
+    openDescriptorInput: byId("open-terrain-descriptor", HTMLInputElement),
+    openVegetationInput: byId("open-vegetation", HTMLInputElement),
+    openCountyInput: byId("open-county", HTMLInputElement),
+    openCatalogInput: byId("open-catalog", HTMLInputElement),
+    openDialogError: byId("open-dialog-error", HTMLElement),
+    openButton: byId("open-project-confirm", HTMLButtonElement),
     projectTitle: byId("project-title", HTMLElement),
     dirtyMarker: byId("dirty-marker", HTMLElement),
     projectState: byId("project-state", HTMLElement),
@@ -266,4 +372,8 @@ function layerToggle(id: string, title: string, detail: string, swatchClass: str
       <span class="layer-swatch ${swatchClass}" aria-hidden="true"></span>
       <span><strong>${title}</strong><small>${detail}</small></span>
     </label>`;
+}
+
+function relinkField(id: string, label: string, accept: string): string {
+  return `<label for="${id}"><span>${label}</span><input id="${id}" type="file" accept="${accept}" /></label>`;
 }

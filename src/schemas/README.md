@@ -10,6 +10,7 @@ the Three.js rewrite:
 They are retained as explicit legacy contract fixtures and are not silently changed.
 
 `scenery-project-v4.schema.json` is the browser rewrite's current editable project
-contract. It adds the required native `vegetation_instances` collection. Milestone 2
+contract. It adds the required native `vegetation_instances` collection. The rewrite
 strictly loads v1–v4 and normalizes the in-memory model to v4 without rewriting the
-source document merely by reading it.
+source document merely by reading it. Milestone 4 saves only v4; its legacy runtime
+export continues to use the independently versioned v2 schema above.

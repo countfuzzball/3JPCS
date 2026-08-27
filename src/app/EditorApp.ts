@@ -1,4 +1,14 @@
 import { importTerrainSources } from "../io/terrainImport";
+import { downloadBytes, downloadJson, saveJsonFile, type SaveFileHandle } from "../io/browserFiles";
+import { finalTerrainArtifacts, resampledVegetationDocument } from "../io/finalExport";
+import {
+  MissingProjectSourcesError,
+  openBrowserProject,
+  projectJson,
+  readJsonFile,
+  type SourceKey,
+} from "../io/projectFiles";
+import { runtimeSceneryV2Document } from "../io/runtimeExport";
 import { AssetCatalog, type AssetDefinition } from "../model/assetCatalog";
 import type { PointXZ } from "../model/coordinates";
 import {
@@ -39,6 +49,7 @@ import {
   type PrimaryPointerIntent,
 } from "../rendering/TerrainViewport";
 import type { TerrainLayerState } from "../rendering/terrain/terrainTexture";
+import { convertCountyToNative, parseCountyReference, parseVegetationReference } from "../model/references";
 import type { TerrainReference } from "../terrain/TerrainReference";
 import type { TerrainSurface } from "../terrain/TerrainSurface";
 import type { WorkingTerrain } from "../terrain/WorkingTerrain";
@@ -87,6 +98,8 @@ export class EditorApp {
   #draftHover: PointXZ | null = null;
   #drag: DragState | null = null;
   #prefabGhost: PointXZ | null = null;
+  #saveHandle: SaveFileHandle | null = null;
+  #projectFileName = "project.scenery.json";
 
   public constructor(host: HTMLElement) {
     this.#elements = buildRootLayout(host);
@@ -115,16 +128,36 @@ export class EditorApp {
       this.#elements.dialogError.hidden = true;
       this.#elements.dialog.showModal();
     });
+    this.#elements.openProjectButton.addEventListener("click", () => {
+      if (this.#store.state.dirty && !window.confirm("Discard the current unsaved project and open another project?")) return;
+      this.#elements.openForm.reset();
+      this.#elements.openDialogError.hidden = true;
+      this.#elements.openDialog.showModal();
+    });
     this.#elements.projectForm.addEventListener("submit", async (event) => {
       const submitter = event.submitter as HTMLButtonElement | null;
       if (submitter?.value === "cancel") return;
       event.preventDefault();
       await this.#createProject();
     });
+    this.#elements.openForm.addEventListener("submit", async (event) => {
+      const submitter = event.submitter as HTMLButtonElement | null;
+      if (submitter?.value === "cancel") return;
+      event.preventDefault();
+      await this.#openProject();
+    });
+    this.#elements.saveButton.addEventListener("click", () => { void this.#saveProject(false); });
+    this.#elements.saveAsButton.addEventListener("click", () => { void this.#saveProject(true); });
     this.#elements.fitButton.addEventListener("click", () => this.#viewport.fitTerrain());
     this.#elements.undoButton.addEventListener("click", () => this.#undo());
     this.#elements.redoButton.addEventListener("click", () => this.#redo());
     this.#elements.assetCatalogInput.addEventListener("change", () => { void this.#loadAssetCatalog(); });
+    this.#elements.vegetationInput.addEventListener("change", () => { void this.#loadVegetationReference(); });
+    this.#elements.countyInput.addEventListener("change", () => { void this.#loadCountyReference(); });
+    this.#elements.convertCountyButton.addEventListener("click", () => this.#convertCountyReference());
+    this.#elements.exportRuntimeButton.addEventListener("click", () => { void this.#exportRuntime(); });
+    this.#elements.exportTerrainButton.addEventListener("click", () => { void this.#exportFinalTerrain(); });
+    this.#elements.exportVegetationButton.addEventListener("click", () => this.#exportResampledVegetation());
     this.#elements.assetSelect.addEventListener("change", () => this.#syncProjection());
     for (const button of this.#elements.toolButtons) {
       button.addEventListener("click", () => {
@@ -144,6 +177,14 @@ export class EditorApp {
       this.#elements.layerTerrainPads,
     ]) {
       input.addEventListener("change", () => this.#authoringLayerChanged());
+    }
+    for (const input of [
+      this.#elements.layerVegetationReference,
+      this.#elements.layerCountySettlements,
+      this.#elements.layerCountyRoads,
+      this.#elements.layerCountyBuildings,
+    ]) {
+      input.addEventListener("change", () => this.#syncProjection());
     }
     this.#elements.inspector.addEventListener("submit", (event) => {
       if (event.target instanceof HTMLFormElement && event.target.matches("[data-property-form]")) {
@@ -184,6 +225,8 @@ export class EditorApp {
         terrain,
         { npy: npy.name, descriptor: descriptor.name },
       );
+      this.#saveHandle = null;
+      this.#projectFileName = `${fileStem(this.#elements.projectName.value)}.scenery.json`;
       this.#elements.dialog.close();
       this.#elements.statusMessage.textContent = `Loaded ${npy.name} — geometry authoring ready`;
     } catch (error) {
@@ -191,6 +234,81 @@ export class EditorApp {
     } finally {
       this.#elements.createButton.disabled = false;
       this.#elements.createButton.textContent = "Validate & create project";
+    }
+  }
+
+  async #openProject(): Promise<void> {
+    const project = this.#elements.openProjectInput.files?.[0];
+    if (!project) {
+      this.#showOpenDialogError("Select a scenery project JSON file.");
+      return;
+    }
+    this.#elements.openButton.disabled = true;
+    this.#elements.openButton.textContent = "Opening…";
+    this.#elements.openDialogError.hidden = true;
+    try {
+      const relinkInputs: readonly [SourceKey, HTMLInputElement][] = [
+        ["terrain_npy", this.#elements.openNpyInput],
+        ["terrain_descriptor", this.#elements.openDescriptorInput],
+        ["vegetation", this.#elements.openVegetationInput],
+        ["county_features", this.#elements.openCountyInput],
+        ["asset_catalog", this.#elements.openCatalogInput],
+      ];
+      const relink: Partial<Record<SourceKey, File>> = {};
+      for (const [key, input] of relinkInputs) {
+        const file = input.files?.[0];
+        if (file) relink[key] = file;
+      }
+      const opened = await openBrowserProject({
+        project,
+        companions: [...(this.#elements.openCompanionsInput.files ?? [])],
+        relink,
+      });
+      this.#resetInteraction();
+      this.#store.openProject(opened.model, opened.terrain, {
+        vegetation: opened.vegetation,
+        county: opened.county,
+        assetCatalog: opened.assetCatalog,
+        warnings: opened.warnings,
+        requiresSave: opened.requiresSave,
+      });
+      this.#saveHandle = null;
+      this.#projectFileName = project.name;
+      this.#elements.openDialog.close();
+      const migration = opened.sourceSchemaVersion === 4 ? "" : ` · migrated from schema v${String(opened.sourceSchemaVersion)}`;
+      const warningSummary = opened.warnings.length === 0 ? "" : ` · ${String(opened.warnings.length)} warning${opened.warnings.length === 1 ? "" : "s"}`;
+      this.#elements.statusMessage.textContent = `Opened ${project.name}${migration}${warningSummary}`;
+    } catch (error) {
+      const message = error instanceof MissingProjectSourcesError
+        ? `${error.message}. Use the explicit relink fields above.`
+        : error instanceof Error ? error.message : String(error);
+      this.#showOpenDialogError(message);
+    } finally {
+      this.#elements.openButton.disabled = false;
+      this.#elements.openButton.textContent = "Validate & open";
+    }
+  }
+
+  async #saveProject(saveAs: boolean): Promise<void> {
+    const model = this.#store.state.model;
+    if (!model) return;
+    const button = saveAs ? this.#elements.saveAsButton : this.#elements.saveButton;
+    button.disabled = true;
+    try {
+      this.#saveHandle = await saveJsonFile(
+        projectJson(model),
+        this.#projectFileName,
+        saveAs ? null : this.#saveHandle,
+      );
+      this.#projectFileName = this.#saveHandle?.name ?? this.#projectFileName;
+      this.#store.markSaved();
+      this.#elements.statusMessage.textContent = `Saved ${this.#projectFileName}`;
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        this.#elements.statusMessage.textContent = `Save failed — ${error instanceof Error ? error.message : String(error)}`;
+      }
+    } finally {
+      button.disabled = !this.#store.state.model;
     }
   }
 
@@ -208,6 +326,92 @@ export class EditorApp {
     }
   }
 
+  async #loadVegetationReference(): Promise<void> {
+    const file = this.#elements.vegetationInput.files?.[0];
+    const model = this.#store.state.model;
+    if (!file || !model) return;
+    this.#elements.vegetationSummary.textContent = "Validating vegetation…";
+    try {
+      const reference = parseVegetationReference(await readJsonFile(file, "vegetation"), model.bounds);
+      this.#store.setVegetationReference(reference, file.name);
+      this.#elements.statusMessage.textContent = `Loaded ${reference.objects.length.toLocaleString()} imported vegetation records as one GPU batch`;
+    } catch (error) {
+      this.#elements.vegetationInput.value = "";
+      this.#elements.vegetationSummary.textContent = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async #loadCountyReference(): Promise<void> {
+    const file = this.#elements.countyInput.files?.[0];
+    const model = this.#store.state.model;
+    if (!file || !model) return;
+    this.#elements.countySummary.textContent = "Validating county features…";
+    try {
+      const reference = parseCountyReference(await readJsonFile(file, "county features"), model.bounds);
+      this.#store.setCountyReference(reference, file.name);
+      const count = reference.settlement_regions.length + reference.roads.length + reference.buildings.length;
+      this.#elements.statusMessage.textContent = `Loaded ${count.toLocaleString()} county reference objects`;
+    } catch (error) {
+      this.#elements.countyInput.value = "";
+      this.#elements.countySummary.textContent = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  #convertCountyReference(): void {
+    const model = this.#store.state.model;
+    const county = this.#store.state.countyReference;
+    if (!model || !county) return;
+    const conversion = convertCountyToNative(model, county);
+    const changed = this.#store.addEntities(conversion.entities, "Convert county reference to native objects");
+    this.#store.addWarnings(conversion.warnings);
+    this.#elements.statusMessage.textContent = changed
+      ? `Converted ${conversion.entities.length.toLocaleString()} county objects to one undoable native edit`
+      : "County conversion added no objects; all source UUIDs already exist";
+  }
+
+  async #exportRuntime(): Promise<void> {
+    const { model, workingTerrain, assetCatalog } = this.#store.state;
+    if (!model || !workingTerrain) return;
+    try {
+      this.#elements.exportRuntimeButton.disabled = true;
+      const document = await runtimeSceneryV2Document(model, workingTerrain, assetCatalog);
+      downloadJson(document, `${fileStem(model.name)}.runtime-scenery-v2.json`);
+      this.#elements.statusMessage.textContent = "Exported flattened runtime scenery v2";
+    } catch (error) {
+      this.#elements.statusMessage.textContent = `Runtime export failed — ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.#elements.exportRuntimeButton.disabled = !this.#store.state.model;
+    }
+  }
+
+  async #exportFinalTerrain(): Promise<void> {
+    const { model, workingTerrain } = this.#store.state;
+    if (!model || !workingTerrain) return;
+    try {
+      this.#elements.exportTerrainButton.disabled = true;
+      this.#elements.statusMessage.textContent = "Encoding unsigned 16-bit terrain PNG…";
+      const artifacts = await finalTerrainArtifacts(workingTerrain);
+      const stem = fileStem(model.name);
+      downloadBytes(artifacts.png, `${stem}.final-heightmap.png`, "image/png");
+      downloadJson(artifacts.metadata, `${stem}.final-heightmap.json`);
+      this.#elements.statusMessage.textContent = `Exported ${String(workingTerrain.pointCountX)} × ${String(workingTerrain.pointCountZ)} 16-bit terrain and metadata`;
+    } catch (error) {
+      this.#elements.statusMessage.textContent = `Terrain export failed — ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.#elements.exportTerrainButton.disabled = !this.#store.state.model;
+    }
+  }
+
+  #exportResampledVegetation(): void {
+    const { model, workingTerrain, vegetationReference } = this.#store.state;
+    if (!model || !workingTerrain || !vegetationReference) return;
+    downloadJson(
+      resampledVegetationDocument(vegetationReference, workingTerrain),
+      `${fileStem(model.name)}.resampled-vegetation-v1.json`,
+    );
+    this.#elements.statusMessage.textContent = `Exported ${vegetationReference.objects.length.toLocaleString()} vegetation records with working-terrain heights`;
+  }
+
   #renderState(state: EditorState): void {
     if (this.#selectedId && !state.model?.has(this.#selectedId)) {
       this.#selectedId = null;
@@ -221,6 +425,8 @@ export class EditorApp {
       : `<span class="state-dot"></span>No project`;
     document.title = `${state.model?.name ?? "Polygon County Scenery Editor"}${state.dirty ? " *" : ""}`;
     this.#elements.fitButton.disabled = !state.terrain;
+    this.#elements.saveButton.disabled = !state.model;
+    this.#elements.saveAsButton.disabled = !state.model;
     this.#elements.undoButton.disabled = !state.canUndo;
     this.#elements.redoButton.disabled = !state.canRedo;
     this.#elements.undoButton.title = state.undoLabel ? `Undo ${state.undoLabel}` : "Nothing to undo";
@@ -233,6 +439,19 @@ export class EditorApp {
       button.disabled = !state.model || (button.dataset.tool === "prefab" && (!state.assetCatalog || state.assetCatalog.assets.length === 0));
     }
     this.#elements.assetCatalogInput.disabled = !state.model;
+    this.#elements.vegetationInput.disabled = !state.model;
+    this.#elements.countyInput.disabled = !state.model;
+    this.#elements.convertCountyButton.disabled = !state.model || !state.countyReference;
+    this.#elements.exportRuntimeButton.disabled = !state.model || !state.workingTerrain;
+    this.#elements.exportTerrainButton.disabled = !state.model || !state.workingTerrain;
+    this.#elements.exportVegetationButton.disabled = !state.model || !state.workingTerrain || !state.vegetationReference;
+    this.#elements.vegetationSummary.textContent = state.vegetationReference
+      ? `${state.vegetationReference.objects.length.toLocaleString()} non-editable records · ${state.vegetationReference.project_name}`
+      : "No imported vegetation reference.";
+    this.#elements.countySummary.textContent = state.countyReference
+      ? `${state.countyReference.settlement_regions.length.toLocaleString()} settlements · ${state.countyReference.roads.length.toLocaleString()} roads · ${state.countyReference.buildings.length.toLocaleString()} buildings`
+      : "No county reference.";
+    this.#renderWarnings(state);
 
     if (state.terrain && state.workingTerrain && state.workingTerrain !== this.#activeTerrain) {
       const preserveView = this.#activeBaseTerrain === state.terrain;
@@ -704,6 +923,9 @@ export class EditorApp {
       this.#prefabGhost && selectedAsset
         ? { xM: this.#prefabGhost.x, zM: this.#prefabGhost.z, asset: selectedAsset }
         : null,
+      this.#store.state.countyReference,
+      this.#store.state.vegetationReference,
+      this.#referenceLayers(),
     );
   }
 
@@ -771,6 +993,20 @@ export class EditorApp {
     };
   }
 
+  #referenceLayers(): {
+    readonly vegetation: boolean;
+    readonly countySettlements: boolean;
+    readonly countyRoads: boolean;
+    readonly countyBuildings: boolean;
+  } {
+    return {
+      vegetation: this.#elements.layerVegetationReference.checked,
+      countySettlements: this.#elements.layerCountySettlements.checked,
+      countyRoads: this.#elements.layerCountyRoads.checked,
+      countyBuildings: this.#elements.layerCountyBuildings.checked,
+    };
+  }
+
   #authoringLayerChanged(): void {
     const selected = this.#selectedId ? this.#store.state.model?.get(this.#selectedId) : undefined;
     const remainsVisible = !selected || ((): boolean => {
@@ -816,6 +1052,34 @@ export class EditorApp {
     this.#elements.assetSummary.textContent = `${String(catalog.assets.length)} assets · ${String(new Set(catalog.assets.map((asset) => asset.category)).size)} proxy categories`;
   }
 
+  #renderWarnings(state: EditorState): void {
+    const warnings = state.warnings.filter((warning) => {
+      if (state.vegetationReference && warning.startsWith("Optional vegetation source")) return false;
+      if (state.countyReference && warning.startsWith("Optional county-features source")) return false;
+      if (state.assetCatalog && (
+        warning.startsWith("Optional asset catalogue source")
+        || warning.startsWith("Project contains prefab instances")
+        || warning.startsWith("Missing asset catalogue entries")
+      )) return false;
+      return true;
+    });
+    const missingAssets = state.model && state.assetCatalog
+      ? [...new Set(state.model.prefabInstances()
+        .filter((prefab) => !state.assetCatalog?.definition(prefab.asset_id))
+        .map((prefab) => prefab.asset_id))].sort()
+      : [];
+    if (state.model && state.model.prefabInstances().length > 0 && !state.assetCatalog) {
+      warnings.push("Project contains prefab instances but no usable asset catalogue is loaded.");
+    } else if (missingAssets.length > 0) {
+      warnings.push(`Missing asset catalogue entries: ${missingAssets.join(", ")}`);
+    }
+    const unique = [...new Set(warnings)];
+    this.#elements.warningsPanel.hidden = unique.length === 0;
+    this.#elements.warningsPanel.innerHTML = unique.length === 0
+      ? ""
+      : `<p class="eyebrow">PROJECT WARNINGS</p>${unique.map((warning) => `<p>⚠ ${escapeHtml(warning)}</p>`).join("")}`;
+  }
+
   #selectedAsset(): AssetDefinition | undefined {
     return this.#store.state.assetCatalog?.definition(this.#elements.assetSelect.value);
   }
@@ -823,6 +1087,11 @@ export class EditorApp {
   #showDialogError(message: string): void {
     this.#elements.dialogError.textContent = message;
     this.#elements.dialogError.hidden = false;
+  }
+
+  #showOpenDialogError(message: string): void {
+    this.#elements.openDialogError.textContent = message;
+    this.#elements.openDialogError.hidden = false;
   }
 }
 
@@ -1018,4 +1287,10 @@ function labelFor(value: string): string {
 
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function fileStem(value: string): string {
+  const stem = value.trim().replace(/\.scenery\.json$/i, "").replace(/\.[^.]+$/, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return stem || "polygon-county";
 }

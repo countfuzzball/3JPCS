@@ -1,12 +1,14 @@
 import {
   AddEntityCommand,
   CommandHistory,
+  CompositeCommand,
   UpdateEntityCommand,
   createRemoveCommand,
   type ModelCommand,
 } from "../history/CommandHistory";
 import type { AssetCatalog } from "../model/assetCatalog";
 import type { AuthoredEntity } from "../model/entities";
+import type { CountyReference, VegetationReference } from "../model/references";
 import { ProjectModel } from "../model/ProjectModel";
 import type { ProjectDocumentV4 } from "../model/projectDto";
 import type { TerrainReference } from "../terrain/TerrainReference";
@@ -17,6 +19,9 @@ export interface EditorState {
   readonly terrain: TerrainReference | null;
   readonly workingTerrain: WorkingTerrain | null;
   readonly assetCatalog: AssetCatalog | null;
+  readonly vegetationReference: VegetationReference | null;
+  readonly countyReference: CountyReference | null;
+  readonly warnings: readonly string[];
   readonly dirty: boolean;
   readonly revision: number;
   readonly canUndo: boolean;
@@ -34,6 +39,9 @@ export class EditorStore {
   #terrain: TerrainReference | null = null;
   #workingTerrain: WorkingTerrain | null = null;
   #assetCatalog: AssetCatalog | null = null;
+  #vegetationReference: VegetationReference | null = null;
+  #countyReference: CountyReference | null = null;
+  #warnings: readonly string[] = [];
   #dirty = false;
   #revision = 0;
 
@@ -43,6 +51,9 @@ export class EditorStore {
       terrain: this.#terrain,
       workingTerrain: this.#workingTerrain,
       assetCatalog: this.#assetCatalog,
+      vegetationReference: this.#vegetationReference,
+      countyReference: this.#countyReference,
+      warnings: this.#warnings,
       dirty: this.#dirty,
       revision: this.#revision,
       canUndo: this.#history.canUndo,
@@ -65,6 +76,9 @@ export class EditorStore {
   ): void {
     this.#terrain = terrain;
     this.#assetCatalog = null;
+    this.#vegetationReference = null;
+    this.#countyReference = null;
+    this.#warnings = [];
     this.#model = ProjectModel.create({
       name: name.trim() || "Untitled Scenery",
       world: {
@@ -87,8 +101,36 @@ export class EditorStore {
     this.#changed();
   }
 
+  public openProject(
+    model: ProjectModel,
+    terrain: TerrainReference,
+    references: {
+      readonly vegetation: VegetationReference | null;
+      readonly county: CountyReference | null;
+      readonly assetCatalog: AssetCatalog | null;
+      readonly warnings: readonly string[];
+      readonly requiresSave?: boolean;
+    },
+  ): void {
+    this.#model = model;
+    this.#terrain = terrain;
+    this.#vegetationReference = references.vegetation;
+    this.#countyReference = references.county;
+    this.#assetCatalog = references.assetCatalog;
+    this.#warnings = [...references.warnings];
+    this.#history.clear();
+    this.#recomposeWorkingTerrain();
+    this.#dirty = references.requiresSave ?? false;
+    this.#changed();
+  }
+
   public addEntity(entity: AuthoredEntity, label: string): boolean {
     return this.#execute(new AddEntityCommand(label, entity));
+  }
+
+  public addEntities(entities: readonly AuthoredEntity[], label: string): boolean {
+    if (entities.length === 0) return false;
+    return this.#execute(new CompositeCommand(label, entities.map((entity) => new AddEntityCommand(label, entity))));
   }
 
   public updateEntity(before: AuthoredEntity, after: AuthoredEntity, label: string): boolean {
@@ -123,6 +165,38 @@ export class EditorStore {
     this.#assetCatalog = catalog;
     model.setAssetCatalogSource(sourceName);
     this.#dirty = true;
+    this.#changed();
+  }
+
+  public setVegetationReference(reference: VegetationReference, sourceName: string): void {
+    if (this.#countyReference && this.#countyReference.project_id !== reference.project_id) {
+      throw new Error("vegetation and county project IDs disagree");
+    }
+    this.#vegetationReference = reference;
+    this.#requireModel().setSource("vegetation", sourceName);
+    this.#dirty = true;
+    this.#changed();
+  }
+
+  public setCountyReference(reference: CountyReference, sourceName: string): void {
+    if (this.#vegetationReference && this.#vegetationReference.project_id !== reference.project_id) {
+      throw new Error("vegetation and county project IDs disagree");
+    }
+    this.#countyReference = reference;
+    this.#requireModel().setSource("county_features", sourceName);
+    this.#dirty = true;
+    this.#changed();
+  }
+
+  public addWarnings(warnings: readonly string[]): void {
+    if (warnings.length === 0) return;
+    this.#warnings = [...this.#warnings, ...warnings];
+    this.#changed();
+  }
+
+  public markSaved(): void {
+    if (!this.#model) return;
+    this.#dirty = false;
     this.#changed();
   }
 

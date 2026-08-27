@@ -52,6 +52,18 @@ export class WorkingTerrain implements TerrainSurface {
     return new Float32Array(this.#heights);
   }
 
+  public littleEndianBytes(): Uint8Array {
+    const bytes = new Uint8Array(this.#heights.length * 4);
+    const view = new DataView(bytes.buffer);
+    this.#heights.forEach((height, index) => view.setFloat32(index * 4, height, true));
+    return bytes;
+  }
+
+  public async sha256(): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", this.littleEndianBytes().slice().buffer);
+    return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
+
   public heightAtGrid(xIndex: number, zIndex: number): number {
     if (
       !Number.isInteger(xIndex)

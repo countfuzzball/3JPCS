@@ -21,6 +21,11 @@ import {
   type PrefabGhostProjection,
   type PrefabLayerState,
 } from "./PrefabRenderAdapter";
+import {
+  ReferenceRenderAdapter,
+  type ReferenceLayerState,
+} from "./ReferenceRenderAdapter";
+import type { CountyReference, VegetationReference } from "../model/references";
 
 export interface PrimaryPointerIntent {
   readonly point: PointXZ;
@@ -51,6 +56,7 @@ export class TerrainViewport {
   readonly #callbacks: TerrainViewportCallbacks;
   readonly #geometry = new GeometryRenderAdapter();
   readonly #prefabs = new PrefabRenderAdapter();
+  readonly #references = new ReferenceRenderAdapter();
   #terrain: TerrainSurface | null = null;
   #terrainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null;
   #border: THREE.LineLoop | null = null;
@@ -75,6 +81,7 @@ export class TerrainViewport {
     this.#scene.add(new THREE.AmbientLight(0xffffff, 1));
     this.#scene.add(this.#geometry.group);
     this.#scene.add(this.#prefabs.group);
+    this.#scene.add(this.#references.group);
     this.#bindEvents();
     this.#resizeObserver = new ResizeObserver(() => this.#resize());
     this.#resizeObserver.observe(this.#host);
@@ -128,6 +135,9 @@ export class TerrainViewport {
     prefabLayers: PrefabLayerState,
     draft: DraftProjection,
     ghost: PrefabGhostProjection | null,
+    county: CountyReference | null,
+    vegetation: VegetationReference | null,
+    referenceLayers: ReferenceLayerState,
   ): void {
     const terrain = this.#terrain;
     const overlayY = terrain
@@ -142,6 +152,7 @@ export class TerrainViewport {
       ghost,
       overlayY,
     );
+    this.#references.sync(county, vegetation, referenceLayers, overlayY);
     this.invalidate();
   }
 
@@ -185,8 +196,10 @@ export class TerrainViewport {
     this.#disposeTerrain();
     this.#geometry.dispose();
     this.#prefabs.dispose();
+    this.#references.dispose();
     this.#scene.remove(this.#geometry.group);
     this.#scene.remove(this.#prefabs.group);
+    this.#scene.remove(this.#references.group);
     this.#renderer.dispose();
     this.#renderer.domElement.remove();
   }

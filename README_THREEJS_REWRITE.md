@@ -1,6 +1,6 @@
 # Polygon County Scenery Editor — Three.js rewrite
 
-This is a genuine static browser rewrite, implemented through **Milestone 3**. The
+This is a genuine static browser rewrite, implemented through **Milestone 4**. The
 Python/Tkinter application remains checked in beside it as the behavioural and
 data-contract reference.
 
@@ -106,11 +106,34 @@ Milestone 3 provides:
 - independent prefab and terrain-pad layer controls with layer-aware picking and
   in-place terrain mesh/texture refresh that preserves the active view.
 
-Project open/save/relink, export workflows, native vegetation authoring/rendering,
-actual GLB loading, and the full workload benchmark belong to later milestones and
-are not partially presented as finished here.
+Milestone 4 provides:
 
-The current verification baseline is 87 Vitest tests, 3 Playwright milestone flows,
+- browser Open with strict v1–v4 project migration, companion-file matching, explicit
+  relinks for moved or absolute source hints, required terrain compatibility checks,
+  and changed/missing-source warnings;
+- current-schema v4 Save/Save As through the File System Access API where available,
+  with a portable JSON download fallback and no browser handle or Three.js state in
+  project data;
+- strict vegetation v1 and county-feature v3 reference imports with matching project
+  identity checks, independent layer toggles, and GPU-friendly projections (one point
+  batch for imported vegetation and merged dashed county geometry);
+- explicit one-time county conversion into native villages, local roads, and prefabs,
+  preserving source UUIDs/frontage where valid and recording the bulk change as one
+  undoable command;
+- conspicuous missing-source and unresolved-asset warnings that do not prevent a
+  compatible project from opening;
+- Python-compatible runtime scenery v2 and resampled imported-vegetation v1 exports,
+  with working-terrain Y values and an explicit block against silently dropping any
+  native v4 vegetation from the legacy runtime format; and
+- a narrow, browser-native unsigned 16-bit single-channel PNG encoder plus the full
+  unversioned heightmap metadata contract and explicit little-endian float32 working-
+  terrain SHA-256.
+
+Native vegetation creation/conversion/editing and runtime scenery v3, actual GLB
+loading, and the full workload benchmark belong to Milestone 5 or later. Imported
+vegetation is intentionally a non-editable dense reference in Milestone 4.
+
+The current verification baseline is 99 Vitest tests, 4 Playwright milestone flows,
 and all 45 Python reference tests.
 
 ## Source-of-truth priority
@@ -128,11 +151,16 @@ The untracked `examples/catalog.json` is intentionally preserved. The tracked
 ## Browser file limitations
 
 A static browser cannot reopen an arbitrary path stored in `sources.*`. Source strings
-are portable name/path hints only; they are not file capabilities. Milestones 1 and 3
-obtain fresh `File` objects from explicit terrain and catalogue inputs. Later
-project-open work must relink
-missing sources through user selection and must never serialize `File`, directory
-handles, Three.js objects, or browser-only state.
+are portable name/path hints only; they are not file capabilities. New/Open and the
+reference pickers obtain fresh `File` objects through explicit user selection. Simple
+relative names can match companion files selected in the same open operation; absolute
+legacy paths require an explicit relink and are never rebound by basename alone. The
+project never serializes `File`, directory handles, Three.js objects, or browser-only
+state.
+
+Save uses `showSaveFilePicker` when the browser exposes it. The download fallback
+cannot provide the Python writer's atomic replace guarantee, and a later Save may
+therefore create another download instead of overwriting the previous file.
 
 NPY data is read locally in memory. The imported typed array is copied behind the
 `TerrainReference` API; callers can request a copy but cannot obtain the authoritative
@@ -144,7 +172,7 @@ buffer. The original file bytes—not a decoded array—define the base SHA-256.
 src/app/          composition, normalized project state, dirty state
 src/model/        entities, strict DTO migration, validation, coordinate transforms
 src/history/      delta-based commands and undo/redo
-src/io/           browser terrain adapters and narrow NPY parser
+src/io/           browser persistence/relinks, narrow NPY parser, and strict exports
 src/terrain/      immutable base, derived float32 working terrain, NW–SE queries
 src/rendering/    Three.js controller and disposable terrain/entity projections
 src/interaction/  navigation, layer-aware picking, and constrained geometry editing

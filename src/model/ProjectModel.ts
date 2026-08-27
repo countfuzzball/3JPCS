@@ -36,7 +36,7 @@ export class ProjectModel {
   public readonly name: string;
   public readonly world: ProjectWorld;
   public sources: ProjectSources;
-  public readonly terrainFingerprint: TerrainFingerprint;
+  public terrainFingerprint: TerrainFingerprint;
   readonly #records = new Map<string, AuthoredEntity>();
   readonly #orders: Record<EntityKind, string[]> = {
     place: [],
@@ -128,6 +128,26 @@ export class ProjectModel {
 
   public setAssetCatalogSource(sourceName: string | null): void {
     this.sources = { ...this.sources, asset_catalog: sourceName };
+  }
+
+  public setSource(name: keyof ProjectSources, sourceName: string | null): void {
+    if ((name === "terrain_npy" || name === "terrain_descriptor") && sourceName === null) {
+      throw new ContractError(`${name} is a required source`);
+    }
+    this.sources = { ...this.sources, [name]: sourceName };
+  }
+
+  public adoptTerrainReference(
+    fingerprint: TerrainFingerprint,
+    sources: { readonly npy: string; readonly descriptor: string },
+  ): void {
+    if (
+      !isClose(this.world.width_m, fingerprint.world_width_m)
+      || !isClose(this.world.depth_m, fingerprint.world_depth_m)
+      || !isClose(this.world.terrain_spacing_m, fingerprint.spacing_m)
+    ) throw new ContractError("terrain source dimensions/spacing are incompatible with the saved scenery world");
+    this.terrainFingerprint = { ...fingerprint };
+    this.sources = { ...this.sources, terrain_npy: sources.npy, terrain_descriptor: sources.descriptor };
   }
 
   public all(): readonly AuthoredEntity[] {
@@ -241,4 +261,8 @@ export class ProjectModel {
     if (additional) ids.add(additional);
     return ids;
   }
+}
+
+function isClose(left: number, right: number): boolean {
+  return Math.abs(left - right) <= Math.max(1e-6, 1e-9 * Math.max(Math.abs(left), Math.abs(right)));
 }

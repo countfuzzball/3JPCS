@@ -68,7 +68,9 @@ describe("WorkingTerrain", () => {
       rotation_deg: 33,
       terrain_pad: { enabled: true, width_m: 12, depth_m: 7, blend_m: 6, target_mode: "base_terrain_at_origin" },
     });
-    expect([...WorkingTerrain.compose(terrain, [rotated]).copyHeights()]).toEqual(golden.rotated.flat());
+    const working = WorkingTerrain.compose(terrain, [rotated]);
+    expect([...working.copyHeights()]).toEqual(golden.rotated.flat());
+    expect(await working.sha256()).toBe("34c065d9c71f9ac40b69a7660f6f4359b1fd96036ca7800b727e1beb4b458160");
     expect(terrain.copyHeights()).toEqual(before);
   });
 
