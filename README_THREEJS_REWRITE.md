@@ -160,7 +160,16 @@ Imported vegetation remains immutable until the user deliberately converts it. A
 woodland polygon remains a semantic region and is never interpreted as thousands of
 tree records.
 
-The current verification baseline is 107 Vitest tests, 5 Playwright milestone flows,
+The post-milestone frontage assist adds a transient, GPU-batched preview over a
+user-selected stretch of native road. It repeats the selected house asset on Left,
+Right, or Both sides using road-edge setback, inter-house gap, and end-clearance
+controls. Left/right follow first-click-to-second-click direction; candidates face the
+road, follow polyline arc length, and are skipped when they overlap a prefab, clash
+with a road, or leave the terrain world. Generation bakes ordinary editable prefab-v4
+records with the road UUID, disabled terrain pads, and one bulk undo command. Later
+road edits do not reposition them, and no project/runtime schema change is involved.
+
+The current verification baseline is 113 Vitest tests, 6 Playwright browser flows,
 and all 45 Python reference tests.
 
 ## Source-of-truth priority

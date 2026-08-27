@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AssetCatalog } from "../../src/model/assetCatalog";
 import type { PrefabInstance } from "../../src/model/entities";
 import { PrefabRenderAdapter } from "../../src/rendering/PrefabRenderAdapter";
+import type { FrontagePlan } from "../../src/interaction/frontageAssist";
 
 const catalog = AssetCatalog.fromDocument({
   format: "polygon-county-asset-catalog",
@@ -56,6 +57,35 @@ describe("prefab render projection", () => {
     expect(asset).toBeDefined();
     adapter.sync([], catalog, null, { prefabs: true, terrainPads: true }, { xM: 5, zM: 6, asset: asset! }, 101);
     expect(adapter.group.getObjectByName("prefab-placement-ghost")?.children.length).toBeGreaterThan(0);
+    adapter.dispose();
+  });
+
+  it("batches valid and skipped frontage candidates into transient preview buffers", () => {
+    const adapter = new PrefabRenderAdapter();
+    const candidate = {
+      side: "left" as const,
+      distanceM: 10,
+      xM: 10,
+      zM: 20,
+      rotationDeg: 180,
+      footprint: [[5, 16], [15, 16], [15, 24], [5, 24]] as const,
+      skipReason: null,
+    };
+    const plan: FrontagePlan = {
+      roadId: "22222222-2222-4222-8222-222222222222",
+      rangeLengthM: 30,
+      rangePoints: [[0, 30], [30, 30]],
+      candidates: [candidate, { ...candidate, xM: 24, skipReason: "prefab_overlap" }],
+      acceptedCount: 1,
+      skipped: { outside_world: 0, prefab_overlap: 1, road_clash: 0 },
+    };
+    adapter.sync([], catalog, null, { prefabs: true, terrainPads: true }, null, 101, plan);
+    const preview = adapter.group.getObjectByName("frontage-preview");
+    expect(preview?.getObjectByName("frontage-valid-candidates")).toBeDefined();
+    expect(preview?.getObjectByName("frontage-skipped-candidates")).toBeDefined();
+    expect(preview?.getObjectByName("frontage-road-range")).toBeDefined();
+    expect(preview?.getObjectByName("frontage-range-anchors")).toBeDefined();
+    expect(preview?.children).toHaveLength(4);
     adapter.dispose();
   });
 });

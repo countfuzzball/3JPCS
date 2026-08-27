@@ -7,7 +7,7 @@ This repository now contains two deliberately separate implementations:
 - the browser-based Vite/TypeScript/Three.js rewrite, currently implemented through
   Milestone 5 (application shell, terrain/native geometry/prefab/vegetation authoring,
   browser persistence and relinking, reference layers, versioned exports, and the full
-  seeded performance benchmark).
+  seeded performance benchmark), followed by a baked road-frontage house generator.
 
 See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
 its verified commands, architecture, browser file limitations, and milestone status.
@@ -122,5 +122,5 @@ python -m pytest -q
 
 Vegetation clearance/exclusion around objects, custom pad target elevations, terrain
 brushes, road deformation, procedural settlement/farm/base generation, automatic
-frontage population, generated crops/livestock, road or hedge meshes, direct GLB/3D
-rendering, and engine-specific integration remain outside v0.2.
+frontage population in the Tk prototype, generated crops/livestock, road or hedge
+meshes, direct GLB/3D rendering, and engine-specific integration remain outside v0.2.

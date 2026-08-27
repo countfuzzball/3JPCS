@@ -109,6 +109,25 @@ button { color: inherit; }
 .compact-label { margin: 4px 0 0; }
 .asset-select { width: 100%; height: 31px; padding: 0 7px; border: 1px solid #3b494c; border-radius: 2px; background: #0e1618; color: #dbe4e6; font-size: 9px; }
 .asset-summary { margin: 0; color: #728083; font-size: 8px; line-height: 1.45; }
+.frontage-options { display: grid; gap: 8px; min-width: 0; margin: 1px 0 0; padding: 9px; border: 1px solid #354347; background: #11191b; }
+.frontage-options:disabled { opacity: .55; }
+.frontage-options legend { padding: 0 5px; color: #7f8d90; font: 8px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.frontage-sides { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.frontage-sides label { position: relative; cursor: pointer; }
+.frontage-sides input { position: absolute; opacity: 0; }
+.frontage-sides span { display: grid; place-items: center; height: 27px; border: 1px solid #3b494c; border-radius: 2px; background: #151f21; color: #93a0a3; font-size: 8px; font-weight: 700; }
+.frontage-sides input:checked + span { border-color: var(--accent); background: #2a3219; color: #e6f7a4; }
+.frontage-sides input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.frontage-measures { display: grid; gap: 5px; }
+.frontage-measures label { display: grid; grid-template-columns: minmax(0, 1fr) 51px 10px; align-items: center; gap: 5px; color: #829093; font-size: 8px; }
+.frontage-measures input { width: 100%; height: 27px; padding: 0 5px; border: 1px solid #3b494c; border-radius: 2px; background: #0e1618; color: #dbe4e6; font: 9px ui-monospace, monospace; }
+.frontage-measures input[aria-invalid="true"] { border-color: var(--error); }
+.frontage-measures small { color: #647174; font: 8px ui-monospace, monospace; }
+.frontage-summary { min-height: 25px; margin: 0; padding: 7px; border-left: 2px solid #587070; background: #0e1618; color: #859295; font-size: 8px; line-height: 1.45; }
+.frontage-summary.has-preview { border-left-color: var(--accent); color: #bdc9cb; }
+.frontage-summary.has-skips { border-left-color: var(--warning); }
+.frontage-actions { display: grid; grid-template-columns: 1.35fr 1fr; gap: 5px; }
+.frontage-actions .button { min-height: 29px; padding: 0 6px; font-size: 8px; }
 
 .layer-row { position: relative; display: grid; grid-template-columns: 17px 16px minmax(0, 1fr); align-items: center; gap: 8px; margin: 3px 0; padding: 7px 6px; border: 1px solid transparent; border-radius: 3px; cursor: pointer; }
 .layer-row:hover { border-color: #354246; background: #192225; }

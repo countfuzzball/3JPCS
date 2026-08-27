@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { AssetCatalog, AssetDefinition } from "../model/assetCatalog";
 import type { PointTuple, PrefabInstance } from "../model/entities";
+import type { FrontageCandidate, FrontagePlan } from "../interaction/frontageAssist";
 import {
   prefabFootprint,
   prefabFrontMarker,
@@ -29,12 +30,15 @@ export class PrefabRenderAdapter {
   public readonly group = new THREE.Group();
   readonly #records = new Map<string, ProjectionRecord>();
   readonly #ghost = new THREE.Group();
+  readonly #frontagePreview = new THREE.Group();
+  #activeFrontagePreview: FrontagePlan | null = null;
   #overlayY = 1;
 
   public constructor() {
     this.group.name = "prefab-projection";
     this.#ghost.name = "prefab-placement-ghost";
-    this.group.add(this.#ghost);
+    this.#frontagePreview.name = "frontage-preview";
+    this.group.add(this.#ghost, this.#frontagePreview);
   }
 
   public sync(
@@ -44,6 +48,7 @@ export class PrefabRenderAdapter {
     layers: PrefabLayerState,
     ghost: PrefabGhostProjection | null,
     overlayY: number,
+    frontagePreview: FrontagePlan | null = null,
   ): void {
     const overlayChanged = overlayY !== this.#overlayY;
     this.#overlayY = overlayY;
@@ -77,12 +82,14 @@ export class PrefabRenderAdapter {
       }
     }
     this.#syncGhost(ghost, catalog);
+    this.#syncFrontagePreview(frontagePreview, overlayChanged);
   }
 
   public dispose(): void {
     for (const projection of this.#records.values()) disposeObject(projection.object);
     this.#records.clear();
     disposeObject(this.#ghost);
+    disposeObject(this.#frontagePreview);
     this.group.clear();
   }
 
@@ -154,6 +161,67 @@ export class PrefabRenderAdapter {
     );
     setRenderOrder(this.#ghost, 70);
   }
+
+  #syncFrontagePreview(preview: FrontagePlan | null, overlayChanged: boolean): void {
+    if (!overlayChanged && preview === this.#activeFrontagePreview) return;
+    this.#activeFrontagePreview = preview;
+    disposeObject(this.#frontagePreview);
+    this.#frontagePreview.clear();
+    if (!preview) return;
+    const accepted = preview.candidates.filter((candidate) => candidate.skipReason === null);
+    const skipped = preview.candidates.filter((candidate) => candidate.skipReason !== null);
+    addCandidateBatch(this.#frontagePreview, accepted, 0xd6ff55, this.#overlayY + 0.31);
+    addCandidateBatch(this.#frontagePreview, skipped, 0xff6d5e, this.#overlayY + 0.32);
+    if (preview.rangePoints.length >= 2) {
+      const path = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(
+          preview.rangePoints.map(([x, z]) => new THREE.Vector3(x, this.#overlayY + 0.34, z)),
+        ),
+        new THREE.LineBasicMaterial({ color: 0x62d8d2, depthTest: false }),
+      );
+      path.name = "frontage-road-range";
+      this.#frontagePreview.add(path);
+      const endpoints = [preview.rangePoints[0], preview.rangePoints.at(-1)].filter(
+        (point): point is PointTuple => point !== undefined,
+      );
+      const anchors = new THREE.Points(
+        new THREE.BufferGeometry().setFromPoints(endpoints.map(([x, z]) => new THREE.Vector3(x, this.#overlayY + 0.36, z))),
+        new THREE.PointsMaterial({ color: 0xffffff, size: 5, sizeAttenuation: false, depthTest: false }),
+      );
+      anchors.name = "frontage-range-anchors";
+      this.#frontagePreview.add(anchors);
+    }
+    setRenderOrder(this.#frontagePreview, 80);
+  }
+}
+
+function addCandidateBatch(group: THREE.Group, candidates: readonly FrontageCandidate[], color: number, y: number): void {
+  if (candidates.length === 0) return;
+  const vertices: THREE.Vector3[] = [];
+  for (const candidate of candidates) {
+    for (let index = 0; index < candidate.footprint.length; index += 1) {
+      const start = candidate.footprint[index];
+      const end = candidate.footprint[(index + 1) % candidate.footprint.length];
+      if (start && end) vertices.push(
+        new THREE.Vector3(start[0], y, start[1]),
+        new THREE.Vector3(end[0], y, end[1]),
+      );
+    }
+    const frontLeft = candidate.footprint[0];
+    const frontRight = candidate.footprint[1];
+    if (frontLeft && frontRight) {
+      vertices.push(
+        new THREE.Vector3(candidate.xM, y, candidate.zM),
+        new THREE.Vector3((frontLeft[0] + frontRight[0]) / 2, y, (frontLeft[1] + frontRight[1]) / 2),
+      );
+    }
+  }
+  const lines = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(vertices),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }),
+  );
+  lines.name = candidates[0]?.skipReason === null ? "frontage-valid-candidates" : "frontage-skipped-candidates";
+  group.add(lines);
 }
 
 function addFootprint(
@@ -227,8 +295,8 @@ function setRenderOrder(object: THREE.Object3D, order: number): void {
 
 function disposeObject(object: THREE.Object3D): void {
   object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh || child instanceof THREE.Line)) return;
-    const renderable = child as THREE.Mesh;
+    if (!(child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Points)) return;
+    const renderable = child as THREE.Mesh | THREE.Line | THREE.Points;
     renderable.geometry.dispose();
     const materials = Array.isArray(renderable.material) ? renderable.material : [renderable.material];
     materials.forEach((material) => material.dispose());

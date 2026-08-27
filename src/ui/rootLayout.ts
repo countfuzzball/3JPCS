@@ -11,6 +11,14 @@ export interface EditorElements {
   readonly assetCatalogInput: HTMLInputElement;
   readonly assetSelect: HTMLSelectElement;
   readonly assetSummary: HTMLElement;
+  readonly frontageOptions: HTMLFieldSetElement;
+  readonly frontageSideInputs: readonly HTMLInputElement[];
+  readonly frontageSetback: HTMLInputElement;
+  readonly frontageGap: HTMLInputElement;
+  readonly frontageEndClearance: HTMLInputElement;
+  readonly frontageSummary: HTMLElement;
+  readonly generateFrontageButton: HTMLButtonElement;
+  readonly clearFrontageButton: HTMLButtonElement;
   readonly vegetationTypeSelect: HTMLSelectElement;
   readonly vegetationAssetId: HTMLInputElement;
   readonly vegetationInput: HTMLInputElement;
@@ -131,6 +139,25 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
             <label class="field-label compact-label" for="asset-select">Placement asset</label>
             <select id="asset-select" class="asset-select" disabled><option value="">No catalogue loaded</option></select>
             ${toolButton("prefab", "⌂", "Place prefab")}
+            ${toolButton("frontage", "⇉", "Frontage assist")}
+            <fieldset id="frontage-options" class="frontage-options" disabled>
+              <legend>Frontage generation</legend>
+              <div class="frontage-sides" role="radiogroup" aria-label="Frontage side">
+                <label><input type="radio" name="frontage-side" value="left" checked /><span>Left</span></label>
+                <label><input type="radio" name="frontage-side" value="right" /><span>Right</span></label>
+                <label><input type="radio" name="frontage-side" value="both" /><span>Both</span></label>
+              </div>
+              <div class="frontage-measures">
+                <label for="frontage-setback"><span>Road-edge setback</span><input id="frontage-setback" type="number" min="0" step="0.5" value="6" /><small>m</small></label>
+                <label for="frontage-gap"><span>House gap</span><input id="frontage-gap" type="number" min="0" step="0.5" value="4" /><small>m</small></label>
+                <label for="frontage-end-clearance"><span>End clearance</span><input id="frontage-end-clearance" type="number" min="0" step="0.5" value="5" /><small>m</small></label>
+              </div>
+              <p id="frontage-summary" class="frontage-summary" role="status">Select a house asset and create a road to begin.</p>
+              <div class="frontage-actions">
+                <button id="generate-frontage" class="button button-primary" type="button" disabled>Generate houses</button>
+                <button id="clear-frontage" class="button" type="button" disabled>Clear range</button>
+              </div>
+            </fieldset>
             <p id="asset-summary" class="asset-summary">Load the shared catalogue to enable proxy placement.</p>
           </section>
           <section class="panel-section vegetation-section">
@@ -323,6 +350,14 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     assetCatalogInput: byId("asset-catalog-file", HTMLInputElement),
     assetSelect: byId("asset-select", HTMLSelectElement),
     assetSummary: byId("asset-summary", HTMLElement),
+    frontageOptions: byId("frontage-options", HTMLFieldSetElement),
+    frontageSideInputs: [...document.querySelectorAll<HTMLInputElement>("input[name='frontage-side']")],
+    frontageSetback: byId("frontage-setback", HTMLInputElement),
+    frontageGap: byId("frontage-gap", HTMLInputElement),
+    frontageEndClearance: byId("frontage-end-clearance", HTMLInputElement),
+    frontageSummary: byId("frontage-summary", HTMLElement),
+    generateFrontageButton: byId("generate-frontage", HTMLButtonElement),
+    clearFrontageButton: byId("clear-frontage", HTMLButtonElement),
     vegetationTypeSelect: byId("vegetation-type-select", HTMLSelectElement),
     vegetationAssetId: byId("vegetation-asset-id", HTMLInputElement),
     vegetationInput: byId("vegetation-reference-file", HTMLInputElement),

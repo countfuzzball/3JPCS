@@ -30,6 +30,7 @@ import {
   VegetationRenderDataManager,
   type VegetationSyncMetrics,
 } from "./VegetationRenderDataManager";
+import type { FrontagePlan } from "../interaction/frontageAssist";
 
 export interface ViewportPerformanceSnapshot {
   readonly drawCalls: number;
@@ -157,6 +158,7 @@ export class TerrainViewport {
     vegetationLayer: boolean,
     draft: DraftProjection,
     ghost: PrefabGhostProjection | null,
+    frontagePreview: FrontagePlan | null,
     county: CountyReference | null,
     vegetation: VegetationReference | null,
     referenceLayers: ReferenceLayerState,
@@ -173,6 +175,7 @@ export class TerrainViewport {
       prefabLayers,
       ghost,
       overlayY,
+      frontagePreview,
     );
     this.#vegetation.sync(model?.vegetationInstances() ?? [], terrain, selectedId, vegetationLayer);
     this.#references.sync(county, vegetation, referenceLayers, overlayY);

@@ -44,7 +44,16 @@ import {
   hitTestPrefab,
   movePrefab,
   prefabFootprint,
+  prefabProxySize,
 } from "../interaction/prefabEditing";
+import {
+  buildFrontagePlan,
+  closestRoadAnchor,
+  type FrontageAnchor,
+  type FrontagePlan,
+  type FrontageSettings,
+  type FrontageSide,
+} from "../interaction/frontageAssist";
 import { moveVegetation, rotateVegetation } from "../interaction/vegetationEditing";
 import {
   TerrainViewport,
@@ -72,6 +81,7 @@ type Tool = "select"
   | "road"
   | "hedgerow"
   | "prefab"
+  | "frontage"
   | "vegetation";
 
 interface DragState {
@@ -93,6 +103,7 @@ const TOOL_INSTRUCTIONS: Record<Tool, string> = {
   road: "Click ordered road control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
   hedgerow: "Click ordered hedgerow control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
   prefab: "Placement is on. Choose a catalogue asset, then click repeatedly to place it. Click Place prefab again to return to Select.",
+  frontage: "Click two points on the same road. Left and right are relative to the first click looking toward the second; review the preview, then generate.",
   vegetation: "Placement is on. Choose a type and logical species/asset ID, then click repeatedly to place it. Click Place vegetation again to return to Select.",
 };
 
@@ -110,6 +121,9 @@ export class EditorApp {
   #draftHover: PointXZ | null = null;
   #drag: DragState | null = null;
   #prefabGhost: PointXZ | null = null;
+  #frontageStart: FrontageAnchor | null = null;
+  #frontageEnd: FrontageAnchor | null = null;
+  #frontagePlan: FrontagePlan | null = null;
   #saveHandle: SaveFileHandle | null = null;
   #projectFileName = "project.scenery.json";
 
@@ -240,12 +254,24 @@ export class EditorApp {
     this.#elements.exportRuntimeV2Button.addEventListener("click", () => { void this.#exportLegacyRuntime(); });
     this.#elements.exportTerrainButton.addEventListener("click", () => { void this.#exportFinalTerrain(); });
     this.#elements.exportVegetationButton.addEventListener("click", () => this.#exportResampledVegetation());
-    this.#elements.assetSelect.addEventListener("change", () => this.#syncProjection());
+    this.#elements.assetSelect.addEventListener("change", () => this.#assetSelectionChanged());
+    for (const input of this.#elements.frontageSideInputs) {
+      input.addEventListener("change", () => this.#frontageOptionsChanged());
+    }
+    for (const input of [
+      this.#elements.frontageSetback,
+      this.#elements.frontageGap,
+      this.#elements.frontageEndClearance,
+    ]) {
+      input.addEventListener("input", () => this.#frontageOptionsChanged());
+    }
+    this.#elements.generateFrontageButton.addEventListener("click", () => this.#generateFrontage());
+    this.#elements.clearFrontageButton.addEventListener("click", () => this.#clearFrontageRange(true));
     for (const button of this.#elements.toolButtons) {
       button.addEventListener("click", () => {
         const tool = button.dataset.tool;
         if (!isTool(tool)) return;
-        const toggleOff = isRepeatPlacementTool(tool) && this.#tool === tool;
+        const toggleOff = isToggleTool(tool) && this.#tool === tool;
         this.#setTool(toggleOff ? "select" : tool);
       });
     }
@@ -556,13 +582,23 @@ export class EditorApp {
       this.#activeCatalog = state.assetCatalog;
       this.#renderAssetChoices(state.assetCatalog);
     }
+    const selectedAsset = this.#selectedAsset();
+    const hasRoad = (state.model?.list("road").length ?? 0) > 0;
+    const frontageAvailable = selectedAsset?.category === "house" && hasRoad;
+    if (this.#tool === "frontage" && !frontageAvailable) {
+      this.#setTool("select");
+      this.#elements.statusMessage.textContent = "Frontage assist stopped because its house asset or road is no longer available";
+    }
     for (const button of this.#elements.toolButtons) {
-      button.disabled = !state.model || (button.dataset.tool === "prefab" && (!state.assetCatalog || state.assetCatalog.assets.length === 0));
+      const requiresAsset = button.dataset.tool === "prefab" || button.dataset.tool === "frontage";
+      const frontageUnavailable = button.dataset.tool === "frontage" && !frontageAvailable;
+      button.disabled = !state.model || (requiresAsset && !selectedAsset) || frontageUnavailable;
     }
     this.#elements.toolInstructions.textContent = state.model
       ? TOOL_INSTRUCTIONS[this.#tool]
       : "Create a terrain project to enable geometry authoring.";
     this.#elements.assetCatalogInput.disabled = !state.model;
+    this.#elements.frontageOptions.disabled = !state.model || !frontageAvailable;
     this.#elements.vegetationTypeSelect.disabled = !state.model;
     this.#elements.vegetationAssetId.disabled = !state.model;
     this.#elements.vegetationInput.disabled = !state.model;
@@ -579,6 +615,8 @@ export class EditorApp {
     this.#elements.countySummary.textContent = state.countyReference
       ? `${state.countyReference.settlement_regions.length.toLocaleString()} settlements · ${state.countyReference.roads.length.toLocaleString()} roads · ${state.countyReference.buildings.length.toLocaleString()} buildings`
       : "No county reference.";
+    this.#recomputeFrontagePlan();
+    this.#renderFrontageControls();
     this.#renderWarnings(state);
 
     if (state.terrain && state.workingTerrain && state.workingTerrain !== this.#activeTerrain) {
@@ -599,9 +637,29 @@ export class EditorApp {
       this.#elements.statusMessage.textContent = "Load an asset catalogue and choose an asset before placing a prefab";
       return;
     }
+    if (tool === "frontage") {
+      const asset = this.#selectedAsset();
+      if (asset?.category !== "house") {
+        this.#elements.statusMessage.textContent = "Choose a house asset before using frontage assist";
+        return;
+      }
+      if ((this.#store.state.model.list("road").length) === 0) {
+        this.#elements.statusMessage.textContent = "Create a road before using frontage assist";
+        return;
+      }
+    }
     if (tool === "vegetation" && this.#elements.vegetationAssetId.value.trim().length === 0) {
       this.#elements.statusMessage.textContent = "Enter a logical vegetation species/asset ID before placing vegetation";
       return;
+    }
+    if (this.#tool === "frontage" || tool === "frontage") {
+      this.#frontageStart = null;
+      this.#frontageEnd = null;
+      this.#frontagePlan = null;
+    }
+    if (tool === "frontage") {
+      this.#selectedId = null;
+      this.#selectedVertex = null;
     }
     this.#tool = tool;
     this.#draft = [];
@@ -614,6 +672,7 @@ export class EditorApp {
       button.setAttribute("aria-pressed", String(active));
     }
     this.#elements.toolInstructions.textContent = TOOL_INSTRUCTIONS[tool];
+    this.#renderFrontageControls();
     this.#viewport.setDrawingCursor(tool !== "select");
     this.#syncProjection();
   }
@@ -717,6 +776,10 @@ export class EditorApp {
       this.#placeVegetation(clampPoint(intent.point, model.bounds));
       return;
     }
+    if (this.#tool === "frontage") {
+      this.#frontageClick(clampPoint(intent.point, model.bounds));
+      return;
+    }
     this.#draft.push(clampPoint(intent.point, model.bounds));
     this.#elements.statusMessage.textContent = `${String(this.#draft.length)} draft point${this.#draft.length === 1 ? "" : "s"} — Enter or double-click to finish`;
     this.#syncProjection();
@@ -724,7 +787,7 @@ export class EditorApp {
 
   #finishDraft(): void {
     const model = this.#store.state.model;
-    if (!model || this.#tool === "select" || this.#tool === "prefab" || this.#tool === "vegetation") return;
+    if (!model || this.#tool === "select" || this.#tool === "prefab" || this.#tool === "vegetation" || this.#tool === "frontage") return;
     const points = dedupeDraft(this.#draft);
     const polygon = this.#tool.startsWith("place:") || this.#tool.startsWith("land:");
     const required = polygon ? 3 : 2;
@@ -844,7 +907,204 @@ export class EditorApp {
     this.#renderInspector();
   }
 
+  #frontageClick(point: PointXZ): void {
+    const model = this.#store.state.model;
+    if (!model) return;
+    if (!this.#elements.layerRoads.checked) {
+      this.#elements.statusMessage.textContent = "Turn on the Native roads layer before choosing a frontage range";
+      return;
+    }
+    const roads = model.list("road").filter((entity): entity is Road => entity.kind === "road");
+    const anchor = closestRoadAnchor(roads, point, this.#viewport.worldUnitsPerPixel() * 10);
+    if (!anchor) {
+      this.#elements.statusMessage.textContent = "Frontage point must be on a visible native road";
+      return;
+    }
+    if (!this.#frontageStart || this.#frontageEnd) {
+      this.#frontageStart = anchor;
+      this.#frontageEnd = null;
+      this.#frontagePlan = null;
+      const road = model.get(anchor.roadId);
+      this.#elements.statusMessage.textContent = `Frontage start set on ${road?.name ?? "road"} — click the end point on the same road`;
+    } else if (anchor.roadId !== this.#frontageStart.roadId) {
+      this.#elements.statusMessage.textContent = "The frontage end must be on the same road as the start";
+      return;
+    } else if (Math.abs(anchor.distanceM - this.#frontageStart.distanceM) < 0.01) {
+      this.#elements.statusMessage.textContent = "Choose a different end point to define a road stretch";
+      return;
+    } else {
+      this.#frontageEnd = anchor;
+      this.#recomputeFrontagePlan();
+      const ready = this.#frontagePlan?.acceptedCount ?? 0;
+      const skipped = (this.#frontagePlan?.candidates.length ?? 0) - ready;
+      this.#elements.statusMessage.textContent = `Frontage preview ready — ${ready.toLocaleString()} house${ready === 1 ? "" : "s"}${skipped > 0 ? `, ${skipped.toLocaleString()} skipped` : ""}`;
+    }
+    this.#renderFrontageControls();
+    this.#syncProjection();
+  }
+
+  #assetSelectionChanged(): void {
+    const asset = this.#selectedAsset();
+    const hasRoad = (this.#store.state.model?.list("road").length ?? 0) > 0;
+    const frontageAvailable = asset?.category === "house" && hasRoad;
+    this.#elements.frontageOptions.disabled = !frontageAvailable;
+    const frontageButton = this.#elements.toolButtons.find((button) => button.dataset.tool === "frontage");
+    if (frontageButton) frontageButton.disabled = !frontageAvailable;
+    if (this.#tool === "frontage" && this.#selectedAsset()?.category !== "house") {
+      this.#setTool("select");
+      this.#elements.statusMessage.textContent = "Frontage assist stopped — choose a house asset to use it";
+      return;
+    }
+    this.#recomputeFrontagePlan();
+    this.#renderFrontageControls();
+    this.#syncProjection();
+  }
+
+  #frontageOptionsChanged(): void {
+    this.#recomputeFrontagePlan();
+    this.#renderFrontageControls();
+    this.#syncProjection();
+  }
+
+  #frontageSettings(): FrontageSettings | null {
+    const checked = this.#elements.frontageSideInputs.find((input) => input.checked)?.value;
+    const side = isFrontageSide(checked) ? checked : "left";
+    const values: readonly [HTMLInputElement, number, boolean][] = [
+      [this.#elements.frontageSetback, Number(this.#elements.frontageSetback.value), this.#elements.frontageSetback.value.trim().length > 0],
+      [this.#elements.frontageGap, Number(this.#elements.frontageGap.value), this.#elements.frontageGap.value.trim().length > 0],
+      [this.#elements.frontageEndClearance, Number(this.#elements.frontageEndClearance.value), this.#elements.frontageEndClearance.value.trim().length > 0],
+    ];
+    let valid = true;
+    for (const [input, value, present] of values) {
+      const invalid = !present || !Number.isFinite(value) || value < 0;
+      input.setAttribute("aria-invalid", String(invalid));
+      valid &&= !invalid;
+    }
+    if (!valid) return null;
+    return {
+      side,
+      setbackM: values[0]?.[1] ?? 0,
+      gapM: values[1]?.[1] ?? 0,
+      endClearanceM: values[2]?.[1] ?? 0,
+    };
+  }
+
+  #recomputeFrontagePlan(): void {
+    if (!this.#frontageStart || !this.#frontageEnd) {
+      this.#frontagePlan = null;
+      return;
+    }
+    const model = this.#store.state.model;
+    const asset = this.#selectedAsset();
+    const settings = this.#frontageSettings();
+    const road = model?.get(this.#frontageStart.roadId);
+    if (!model || asset?.category !== "house" || !settings || road?.kind !== "road") {
+      this.#frontagePlan = null;
+      if (road?.kind !== "road") {
+        this.#frontageStart = null;
+        this.#frontageEnd = null;
+      }
+      return;
+    }
+    const proxy = prefabProxySize({ category: asset.category, scale: 1 }, this.#store.state.assetCatalog);
+    const roads = model.list("road").filter((entity): entity is Road => entity.kind === "road");
+    this.#frontagePlan = buildFrontagePlan(
+      road,
+      this.#frontageStart,
+      this.#frontageEnd,
+      proxy,
+      settings,
+      model.bounds,
+      roads,
+      model.prefabInstances(),
+      this.#store.state.assetCatalog,
+    );
+  }
+
+  #renderFrontageControls(): void {
+    const model = this.#store.state.model;
+    const asset = this.#selectedAsset();
+    const hasRoad = (model?.list("road").length ?? 0) > 0;
+    const summary = this.#elements.frontageSummary;
+    summary.classList.remove("has-preview", "has-skips");
+    if (!model) {
+      summary.textContent = "Create a terrain project to begin.";
+    } else if (asset?.category !== "house") {
+      summary.textContent = "Select a house asset to enable frontage assist.";
+    } else if (!hasRoad) {
+      summary.textContent = "Create at least one native road to begin.";
+    } else if (!this.#frontageSettings()) {
+      summary.textContent = "Setback, gap, and end clearance must be zero or greater.";
+    } else if (!this.#frontageStart) {
+      summary.textContent = this.#tool === "frontage"
+        ? "Click the first point of the road stretch."
+        : "Turn on Frontage assist, then click a road stretch.";
+    } else if (!this.#frontageEnd) {
+      const road = model.get(this.#frontageStart.roadId);
+      summary.textContent = `Start set on ${road?.name ?? "road"}; click the end point on the same road.`;
+      summary.classList.add("has-preview");
+    } else if (this.#frontagePlan) {
+      const plan = this.#frontagePlan;
+      const skippedCount = plan.candidates.length - plan.acceptedCount;
+      const reasons = [
+        plan.skipped.prefab_overlap > 0 ? `${String(plan.skipped.prefab_overlap)} overlapping` : "",
+        plan.skipped.road_clash > 0 ? `${String(plan.skipped.road_clash)} road-clashing` : "",
+        plan.skipped.outside_world > 0 ? `${String(plan.skipped.outside_world)} out-of-world` : "",
+      ].filter((value) => value.length > 0);
+      summary.textContent = plan.candidates.length === 0
+        ? `${plan.rangeLengthM.toFixed(1)} m range is too short for this house and the current clearances.`
+        : `${plan.acceptedCount.toLocaleString()} ready · ${plan.rangeLengthM.toFixed(1)} m range${skippedCount > 0 ? ` · ${skippedCount.toLocaleString()} skipped (${reasons.join(", ")})` : ""}`;
+      summary.classList.add("has-preview");
+      if (skippedCount > 0) summary.classList.add("has-skips");
+    }
+    this.#elements.generateFrontageButton.disabled = this.#tool !== "frontage" || (this.#frontagePlan?.acceptedCount ?? 0) === 0;
+    this.#elements.clearFrontageButton.disabled = !this.#frontageStart;
+  }
+
+  #generateFrontage(): void {
+    const model = this.#store.state.model;
+    const asset = this.#selectedAsset();
+    const plan = this.#frontagePlan;
+    if (!model || asset?.category !== "house" || !plan) return;
+    const candidates = plan.candidates.filter((candidate) => candidate.skipReason === null);
+    if (candidates.length === 0) return;
+    const usedNames = new Set(model.all().map((entity) => entity.name));
+    const entities: PrefabInstance[] = candidates.map((candidate) => ({
+      kind: "prefab",
+      id: newEntityId(),
+      name: nextUniqueName(asset.display_name, usedNames),
+      visible: true,
+      locked: false,
+      category: asset.category,
+      asset_id: asset.asset_id,
+      x_m: candidate.xM,
+      z_m: candidate.zM,
+      rotation_deg: candidate.rotationDeg,
+      scale: 1,
+      frontage_road_id: plan.roadId,
+      terrain_pad: { ...DEFAULT_TERRAIN_PAD, enabled: false },
+    }));
+    const skippedCount = plan.candidates.length - plan.acceptedCount;
+    this.#frontageStart = null;
+    this.#frontageEnd = null;
+    this.#frontagePlan = null;
+    this.#selectedId = entities.at(-1)?.id ?? null;
+    this.#selectedVertex = null;
+    this.#store.addEntities(entities, `Generate ${String(entities.length)} frontage houses`);
+    this.#elements.statusMessage.textContent = `Generated ${entities.length.toLocaleString()} frontage house${entities.length === 1 ? "" : "s"} as one undoable edit${skippedCount > 0 ? ` · skipped ${skippedCount.toLocaleString()}` : ""}`;
+  }
+
+  #clearFrontageRange(showStatus: boolean): void {
+    this.#frontageStart = null;
+    this.#frontageEnd = null;
+    this.#frontagePlan = null;
+    if (showStatus) this.#elements.statusMessage.textContent = "Frontage range cleared";
+    this.#renderFrontageControls();
+    this.#syncProjection();
+  }
+
   #cancelInteraction(): void {
+    const cancelledFrontage = this.#tool === "frontage" && this.#frontageStart !== null;
     if (this.#drag) {
       this.#store.replaceLive(this.#drag.original);
       this.#drag = null;
@@ -852,7 +1112,11 @@ export class EditorApp {
     this.#draft = [];
     this.#draftHover = null;
     this.#prefabGhost = null;
-    this.#elements.statusMessage.textContent = "Draft cancelled";
+    this.#frontageStart = null;
+    this.#frontageEnd = null;
+    this.#frontagePlan = null;
+    this.#elements.statusMessage.textContent = cancelledFrontage ? "Frontage range cancelled — assist remains on" : "Draft cancelled";
+    this.#renderFrontageControls();
     this.#syncProjection();
   }
 
@@ -1117,6 +1381,7 @@ export class EditorApp {
       this.#prefabGhost && selectedAsset
         ? { xM: this.#prefabGhost.x, zM: this.#prefabGhost.z, asset: selectedAsset }
         : null,
+      this.#frontagePlan,
       this.#store.state.countyReference,
       this.#store.state.vegetationReference,
       this.#referenceLayers(),
@@ -1228,6 +1493,9 @@ export class EditorApp {
     this.#draftHover = null;
     this.#drag = null;
     this.#prefabGhost = null;
+    this.#frontageStart = null;
+    this.#frontageEnd = null;
+    this.#frontagePlan = null;
     this.#tool = "select";
   }
 
@@ -1472,13 +1740,18 @@ function isTool(value: string | undefined): value is Tool {
     || value === "road"
     || value === "hedgerow"
     || value === "prefab"
+    || value === "frontage"
     || value === "vegetation"
     || PLACE_TYPES.some((kind) => value === `place:${kind}`)
     || LAND_USE_TYPES.some((kind) => value === `land:${kind}`);
 }
 
-function isRepeatPlacementTool(tool: Tool): tool is "prefab" | "vegetation" {
-  return tool === "prefab" || tool === "vegetation";
+function isToggleTool(tool: Tool): tool is "prefab" | "frontage" | "vegetation" {
+  return tool === "prefab" || tool === "frontage" || tool === "vegetation";
+}
+
+function isFrontageSide(value: string | undefined): value is FrontageSide {
+  return value === "left" || value === "right" || value === "both";
 }
 
 function isGeometry(entity: AuthoredEntity): entity is GeometryEntity {
@@ -1516,6 +1789,18 @@ function formatMetres(value: number): string {
 
 function labelFor(value: string): string {
   return value.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function nextUniqueName(stem: string, usedNames: Set<string>): string {
+  if (!usedNames.has(stem)) {
+    usedNames.add(stem);
+    return stem;
+  }
+  let suffix = 2;
+  while (usedNames.has(`${stem} ${String(suffix)}`)) suffix += 1;
+  const name = `${stem} ${String(suffix)}`;
+  usedNames.add(name);
+  return name;
 }
 
 function escapeHtml(value: string): string {
