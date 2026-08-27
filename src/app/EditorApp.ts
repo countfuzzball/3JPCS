@@ -92,8 +92,8 @@ const TOOL_INSTRUCTIONS: Record<Tool, string> = {
   "land:woodland": "Click woodland vertices. Enter or double-click finishes; Backspace removes; Escape cancels.",
   road: "Click ordered road control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
   hedgerow: "Click ordered hedgerow control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
-  prefab: "Choose a catalogue asset, hover to preview its footprint/front, then click once to place it.",
-  vegetation: "Choose a type and logical species/asset ID, then click once to place an editable vegetation record.",
+  prefab: "Placement is on. Choose a catalogue asset, then click repeatedly to place it. Click Place prefab again to return to Select.",
+  vegetation: "Placement is on. Choose a type and logical species/asset ID, then click repeatedly to place it. Click Place vegetation again to return to Select.",
 };
 
 export class EditorApp {
@@ -244,7 +244,9 @@ export class EditorApp {
     for (const button of this.#elements.toolButtons) {
       button.addEventListener("click", () => {
         const tool = button.dataset.tool;
-        if (isTool(tool)) this.#setTool(tool);
+        if (!isTool(tool)) return;
+        const toggleOff = isRepeatPlacementTool(tool) && this.#tool === tool;
+        this.#setTool(toggleOff ? "select" : tool);
       });
     }
     for (const input of [this.#elements.layerTerrain, this.#elements.layerHillshade, this.#elements.layerContours]) {
@@ -811,8 +813,7 @@ export class EditorApp {
     this.#selectedId = entity.id;
     this.#selectedVertex = null;
     this.#store.addEntity(entity, `Place ${asset.display_name}`);
-    this.#elements.statusMessage.textContent = `Placed ${entity.name}`;
-    this.#setTool("select");
+    this.#elements.statusMessage.textContent = `Placed ${entity.name} — prefab placement remains on`;
     this.#renderInspector();
   }
 
@@ -839,8 +840,7 @@ export class EditorApp {
     this.#selectedId = entity.id;
     this.#selectedVertex = null;
     this.#store.addEntity(entity, `Place ${entity.name}`);
-    this.#elements.statusMessage.textContent = `Placed ${entity.name}`;
-    this.#setTool("select");
+    this.#elements.statusMessage.textContent = `Placed ${entity.name} — vegetation placement remains on`;
     this.#renderInspector();
   }
 
@@ -1475,6 +1475,10 @@ function isTool(value: string | undefined): value is Tool {
     || value === "vegetation"
     || PLACE_TYPES.some((kind) => value === `place:${kind}`)
     || LAND_USE_TYPES.some((kind) => value === `land:${kind}`);
+}
+
+function isRepeatPlacementTool(tool: Tool): tool is "prefab" | "vegetation" {
+  return tool === "prefab" || tool === "vegetation";
 }
 
 function isGeometry(entity: AuthoredEntity): entity is GeometryEntity {

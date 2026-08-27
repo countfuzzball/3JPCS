@@ -34,6 +34,33 @@ test("places, edits, pads, locks, layers, frontage, and undoes catalogue prefabs
   await expect(page.locator("#inspector-title")).toHaveText("Example House");
   await expect(page.getByLabel("Asset", { exact: true })).toHaveValue("example_house");
   await expect(page.getByLabel("Category")).toHaveValue("house");
+  await expect(placeTool).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.click(center.x + 120, center.y + 100);
+  await expect(page.locator("#inspector-title")).toHaveText("Example House 2");
+  await expect(page.locator("#status-message")).toContainText("prefab placement remains on");
+
+  await placeTool.click();
+  await expect(placeTool).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: /Select \/ move/ })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Delete");
+
+  await placeTool.click();
+  const vegetationTool = page.getByRole("button", { name: /Place vegetation/ });
+  await vegetationTool.click();
+  await expect(placeTool).toHaveAttribute("aria-pressed", "false");
+  await expect(vegetationTool).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.click(center.x - 120, center.y + 100);
+  await expect(page.locator("#inspector-title")).toHaveText("Oak");
+  await page.mouse.click(center.x - 145, center.y + 100);
+  await expect(page.locator("#inspector-title")).toHaveText("Oak 2");
+  await expect(page.locator("#status-message")).toContainText("vegetation placement remains on");
+
+  await vegetationTool.click();
+  await expect(vegetationTool).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: /Select \/ move/ })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Delete");
+  await page.mouse.click(center.x, center.y);
+  await expect(page.locator("#inspector-title")).toHaveText("Example House");
 
   await page.getByLabel("Frontage road").selectOption({ index: 1 });
   await page.getByLabel("Enabled", { exact: true }).check();
