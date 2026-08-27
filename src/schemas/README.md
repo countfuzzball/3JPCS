@@ -12,5 +12,10 @@ They are retained as explicit legacy contract fixtures and are not silently chan
 `scenery-project-v4.schema.json` is the browser rewrite's current editable project
 contract. It adds the required native `vegetation_instances` collection. The rewrite
 strictly loads v1–v4 and normalizes the in-memory model to v4 without rewriting the
-source document merely by reading it. Milestone 4 saves only v4; its legacy runtime
-export continues to use the independently versioned v2 schema above.
+source document merely by reading it. Milestone 5 saves only v4.
+
+`runtime-scenery-v3.schema.json` is the current strict runtime contract. It adds the
+required native `vegetation_instances` collection, derived terrain Y, normalized yaw,
+and catalogue-resolution status while omitting editor locks and terrain-pad state. The
+independently versioned v2 snapshot remains available only through the explicitly
+labelled legacy export; nonempty native vegetation is never silently omitted.

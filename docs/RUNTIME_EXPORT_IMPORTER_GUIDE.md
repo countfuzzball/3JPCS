@@ -5,6 +5,17 @@ produced by Polygon County Scenery Editor v0.2. It is intended for implementing 
 terrain viewer, Godot/Unity/Three.js importer, conversion tool, or validation pipeline
 without reading the editable `.scenery.json` project format.
 
+> **Browser rewrite addendum (v0.5 / Milestone 5):** the Three.js editor now defaults
+> to strict runtime scenery v3, which is the v2 document described below plus required
+> native `vegetation_instances`. Each native record contains ID/name/visibility,
+> vegetation type, logical asset ID, X/Z, working-terrain Y, normalized yaw, scale,
+> nullable source-region UUID, and resolved/missing asset status. It omits locks and
+> terrain pads. The original v2 contract below remains available as an explicitly
+> labelled legacy export and cannot silently omit a nonempty native collection. See
+> `src/schemas/runtime-scenery-v3.schema.json` and `docs/SCENERY_FORMATS.md` for the
+> current browser contract. The remainder of this guide deliberately preserves the
+> Python v0.2/v2 consumer contract.
+
 This guide adapts the Terrain Editor runtime importer contract. Terrain image encoding,
 coordinates, grid layout, and triangle sampling remain compatible. The Scenery Editor
 adds composed terrain pads, resampled vegetation, and its own semantic runtime-scenery

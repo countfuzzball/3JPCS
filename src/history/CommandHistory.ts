@@ -30,6 +30,27 @@ export class AddEntityCommand implements ModelCommand {
   }
 }
 
+export class BulkAddEntitiesCommand implements ModelCommand {
+  public readonly isNoop: boolean;
+  public readonly affectsWorkingTerrain: boolean;
+
+  public constructor(
+    public readonly label: string,
+    public readonly entities: readonly AuthoredEntity[],
+  ) {
+    this.isNoop = entities.length === 0;
+    this.affectsWorkingTerrain = entities.some(activeTerrainPad);
+  }
+
+  public apply(model: ProjectModel): void {
+    model.insertMany(this.entities);
+  }
+
+  public revert(model: ProjectModel): void {
+    model.removeMany(this.entities.map((entity) => entity.id));
+  }
+}
+
 export class UpdateEntityCommand implements ModelCommand {
   public readonly isNoop: boolean;
   public readonly affectsWorkingTerrain: boolean;
@@ -113,15 +134,13 @@ export class CommandHistory {
   public execute(model: ProjectModel, command: ModelCommand): boolean {
     if (command.isNoop) return false;
     command.apply(model);
-    model.validate();
     this.#undo.push(command);
     this.#redo.length = 0;
     return true;
   }
 
-  public recordApplied(model: ProjectModel, command: ModelCommand): boolean {
+  public recordApplied(_model: ProjectModel, command: ModelCommand): boolean {
     if (command.isNoop) return false;
-    model.validate();
     this.#undo.push(command);
     this.#redo.length = 0;
     return true;
@@ -131,7 +150,6 @@ export class CommandHistory {
     const command = this.#undo.pop();
     if (!command) return null;
     command.revert(model);
-    model.validate();
     this.#redo.push(command);
     return command.label;
   }
@@ -140,7 +158,6 @@ export class CommandHistory {
     const command = this.#redo.pop();
     if (!command) return null;
     command.apply(model);
-    model.validate();
     this.#undo.push(command);
     return command.label;
   }

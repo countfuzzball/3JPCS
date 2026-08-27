@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runtimeSceneryV2Document } from "../../src/io/runtimeExport";
+import { runtimeSceneryV2Document, runtimeSceneryV3Document } from "../../src/io/runtimeExport";
 import { ProjectModel } from "../../src/model/ProjectModel";
 import type { PrefabInstance, Road } from "../../src/model/entities";
 import { WorkingTerrain } from "../../src/terrain/WorkingTerrain";
@@ -50,5 +50,39 @@ describe("runtime scenery v2", () => {
     });
     await expect(runtimeSceneryV2Document(model, WorkingTerrain.compose(terrain, []), null))
       .rejects.toThrow(/cannot represent native vegetation/i);
+  });
+
+  it("exports native vegetation through runtime v3 with derived Y and normalized yaw", async () => {
+    const terrain = await fixtureTerrain();
+    const model = ProjectModel.create({
+      name: "Runtime v3",
+      world: { width_m: 20, depth_m: 20, terrain_spacing_m: 10 },
+      sources: { terrain_npy: "terrain.npy", terrain_descriptor: "terrain.json", vegetation: null, county_features: null, asset_catalog: null },
+      terrain_fingerprint: terrain.fingerprint,
+    });
+    model.insert({
+      kind: "vegetation", id: "33333333-3333-4333-8333-333333333333", name: "Tree", visible: false, locked: true,
+      vegetation_type: "forest_tree", asset_id: "oak", x_m: 4, z_m: 5, rotation_deg: 450, scale: 1.2,
+      source_region_id: "44444444-4444-4444-8444-444444444444",
+    });
+    const working = WorkingTerrain.compose(terrain, []);
+    const output = await runtimeSceneryV3Document(model, working, null);
+    const records = output.vegetation_instances as Record<string, unknown>[];
+    expect(output.schema_version).toBe(3);
+    expect(records[0]).toEqual({
+      id: "33333333-3333-4333-8333-333333333333",
+      name: "Tree",
+      visible: false,
+      vegetation_type: "forest_tree",
+      asset_id: "oak",
+      x_m: 4,
+      z_m: 5,
+      terrain_y_m: working.heightAt(4, 5),
+      rotation_deg: 90,
+      scale: 1.2,
+      source_region_id: "44444444-4444-4444-8444-444444444444",
+      asset_status: "missing",
+    });
+    expect(records[0]).not.toHaveProperty("locked");
   });
 });

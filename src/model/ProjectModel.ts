@@ -7,6 +7,7 @@ import {
   type EntityKind,
   type GeometryEntity,
   type PrefabInstance,
+  type VegetationInstance,
   type WorldBounds,
 } from "./entities";
 import {
@@ -126,6 +127,14 @@ export class ProjectModel {
     });
   }
 
+  public vegetationInstances(): readonly VegetationInstance[] {
+    return this.#orders.vegetation.map((id) => {
+      const entity = this.#require(id);
+      if (entity.kind !== "vegetation") throw new ContractError("normalized vegetation collection is inconsistent");
+      return entity;
+    });
+  }
+
   public setAssetCatalogSource(sourceName: string | null): void {
     this.sources = { ...this.sources, asset_catalog: sourceName };
   }
@@ -172,6 +181,26 @@ export class ProjectModel {
     order.splice(index, 0, entity.id);
   }
 
+  public insertMany(entities: readonly AuthoredEntity[]): void {
+    if (entities.length === 0) return;
+    const incomingIds = new Set<string>();
+    for (const entity of entities) {
+      if (this.#records.has(entity.id) || incomingIds.has(entity.id)) {
+        throw new ContractError(`duplicate authored object id: ${entity.id}`);
+      }
+      incomingIds.add(entity.id);
+    }
+    const roadIds = this.#roadIds();
+    for (const entity of entities) {
+      if (entity.kind === "road") roadIds.add(entity.id);
+    }
+    for (const entity of entities) validateEntity(entity, this.bounds, roadIds);
+    for (const entity of entities) {
+      this.#records.set(entity.id, entity);
+      this.#orders[entity.kind].push(entity.id);
+    }
+  }
+
   public replace(entity: AuthoredEntity): void {
     const previous = this.#require(entity.id);
     if (previous.kind !== entity.kind) {
@@ -195,6 +224,27 @@ export class ProjectModel {
     order.splice(index, 1);
     this.#records.delete(id);
     return { entity, index };
+  }
+
+  public removeMany(ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    const removing = new Set(ids);
+    if (removing.size !== ids.length) throw new ContractError("bulk removal contains a duplicate authored object id");
+    for (const id of removing) this.#require(id);
+    const removedRoads = new Set(
+      [...removing].filter((id) => this.#require(id).kind === "road"),
+    );
+    if (removedRoads.size > 0) {
+      for (const prefab of this.prefabInstances()) {
+        if (!removing.has(prefab.id) && prefab.frontage_road_id && removedRoads.has(prefab.frontage_road_id)) {
+          throw new ContractError("road cannot be removed until prefab frontage references are cleared");
+        }
+      }
+    }
+    for (const kind of ENTITY_KINDS) {
+      this.#orders[kind] = this.#orders[kind].filter((id) => !removing.has(id));
+    }
+    for (const id of removing) this.#records.delete(id);
   }
 
   public prefabsReferencingRoad(roadId: string): readonly PrefabInstance[] {
@@ -256,7 +306,7 @@ export class ProjectModel {
     return entity;
   }
 
-  #roadIds(additional?: string): ReadonlySet<string> {
+  #roadIds(additional?: string): Set<string> {
     const ids = new Set(this.#orders.road);
     if (additional) ids.add(additional);
     return ids;

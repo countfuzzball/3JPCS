@@ -1,0 +1,135 @@
+{
+  "recordedAt": "2026-08-27T15:36:23.785Z",
+  "productionBuild": true,
+  "seed": "0x5eedc0de",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "devicePixelRatio": 1
+  },
+  "counts": {
+    "roads": 309,
+    "prefabs": 279,
+    "trees": 4870,
+    "shrubs": 27628,
+    "vegetation": 32498
+  },
+  "constructionAndValidationMs": 737.0999999642372,
+  "interactiveMs": 2446.699999988079,
+  "initialSnapshot": {
+    "drawCalls": 2735,
+    "sceneObjectCount": 3862,
+    "geometries": 2147,
+    "textures": 1,
+    "gpu": {
+      "vendor": "Google Inc. (Google)",
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "nativeVegetation": {
+      "modelCount": 32498,
+      "batchCount": 411,
+      "added": 32498,
+      "updated": 0,
+      "removed": 0,
+      "rebatched": 0,
+      "slotWrites": 32498,
+      "terrainYUpdates": 0,
+      "fullRebuilds": 0
+    }
+  },
+  "frameTimes": {
+    "samples": 60,
+    "medianMs": 1916.6000000000058,
+    "p95Ms": 2299.899999999994
+  },
+  "denseSelection": {
+    "id": "00000003-0000-4000-8000-000000000001",
+    "latencyMs": 210.79999995231628
+  },
+  "sparseSelection": {
+    "id": "00000003-0000-4000-8000-000000007ef2",
+    "latencyMs": 205.30000001192093
+  },
+  "withinChunkMove": {
+    "latencyMs": 206.70000004768372,
+    "snapshot": {
+      "drawCalls": 2737,
+      "sceneObjectCount": 3864,
+      "geometries": 2149,
+      "textures": 1,
+      "gpu": {
+        "vendor": "Google Inc. (Google)",
+        "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+      },
+      "nativeVegetation": {
+        "modelCount": 32498,
+        "batchCount": 411,
+        "added": 0,
+        "updated": 1,
+        "removed": 0,
+        "rebatched": 0,
+        "slotWrites": 1,
+        "terrainYUpdates": 0,
+        "fullRebuilds": 0
+      }
+    }
+  },
+  "acrossChunkMove": {
+    "latencyMs": 142.80000001192093,
+    "snapshot": {
+      "drawCalls": 2738,
+      "sceneObjectCount": 3865,
+      "geometries": 2150,
+      "textures": 1,
+      "gpu": {
+        "vendor": "Google Inc. (Google)",
+        "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+      },
+      "nativeVegetation": {
+        "modelCount": 32498,
+        "batchCount": 412,
+        "added": 0,
+        "updated": 0,
+        "removed": 0,
+        "rebatched": 1,
+        "slotWrites": 2,
+        "terrainYUpdates": 0,
+        "fullRebuilds": 0
+      }
+    }
+  },
+  "terrainPadRefresh": {
+    "latencyMs": 1012.8000000119209,
+    "snapshot": {
+      "drawCalls": 2740,
+      "sceneObjectCount": 3865,
+      "geometries": 2152,
+      "textures": 1,
+      "gpu": {
+        "vendor": "Google Inc. (Google)",
+        "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+      },
+      "nativeVegetation": {
+        "modelCount": 32498,
+        "batchCount": 412,
+        "added": 0,
+        "updated": 0,
+        "removed": 0,
+        "rebatched": 0,
+        "slotWrites": 0,
+        "terrainYUpdates": 32498,
+        "fullRebuilds": 0
+      }
+    }
+  },
+  "serialization": {
+    "latencyMs": 470.19999998807907,
+    "bytes": 10946283
+  },
+  "memory": {
+    "usedJSHeapSize": 47400000,
+    "totalJSHeapSize": 68000000,
+    "jsHeapSizeLimit": 3760000000
+  }
+}

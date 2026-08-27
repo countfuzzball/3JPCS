@@ -84,9 +84,6 @@ export async function openBrowserProject(selection: ProjectOpenSelection): Promi
   if (countyFile) model.setSource("county_features", countyFile.name);
   if (catalogFile) model.setSource("asset_catalog", catalogFile.name);
   appendAssetWarnings(model, assetCatalog, warnings);
-  if (model.list("vegetation").length > 0) {
-    warnings.push("Native vegetation instances are preserved in project v4 but remain non-editable until Milestone 5; runtime scenery v2 export will refuse to omit them.");
-  }
   const requiresSave = sourceSchemaVersion !== 4
     || originalFingerprint.sha256 !== model.terrainFingerprint.sha256
     || (Object.keys(originalSources) as SourceKey[]).some((key) => originalSources[key] !== model.sources[key]);
@@ -147,13 +144,13 @@ function warnMissingOptional(label: string, hint: string | null, file: File | un
 }
 
 function appendAssetWarnings(model: ProjectModel, catalog: AssetCatalog | null, warnings: string[]): void {
-  const prefabs = model.prefabInstances();
-  if (!catalog && prefabs.length > 0) {
-    warnings.push("Project contains prefab instances but has no usable asset catalogue source.");
+  const records = [...model.prefabInstances(), ...model.vegetationInstances()];
+  if (!catalog && records.length > 0) {
+    warnings.push("Project contains logical prefab or vegetation assets but has no usable asset catalogue source.");
     return;
   }
   if (!catalog) return;
-  const missing = [...new Set(prefabs.filter((prefab) => !catalog.definition(prefab.asset_id)).map((prefab) => prefab.asset_id))].sort();
+  const missing = [...new Set(records.filter((entity) => !catalog.definition(entity.asset_id)).map((entity) => entity.asset_id))].sort();
   if (missing.length > 0) warnings.push(`Missing asset catalogue entries: ${missing.join(", ")}`);
 }
 

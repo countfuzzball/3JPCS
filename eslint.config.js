@@ -10,6 +10,7 @@ export default tseslint.config(
       "coverage/**",
       "playwright-report/**",
       "test-results/**",
+      ".pytest_cache/**",
       ".verification-pydeps/**",
       "eslint.config.js",
       "scripts/**/*.mjs",

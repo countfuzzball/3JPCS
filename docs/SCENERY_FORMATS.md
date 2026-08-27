@@ -5,7 +5,7 @@ south/down, and runtime +Y elevation/up. Roads and authored polygon geometry rem
 2D X/Z data. Runtime scenery keeps only logical asset IDs; the separate shared asset
 catalogue maps those IDs to resources.
 
-## Native scenery project v3
+## Python reference scenery project v3
 
 Discriminator: `format == "polygon-county-scenery-project"` and
 `schema_version == 3`.
@@ -60,7 +60,23 @@ Projects v1 and v2 remain readable. Both legacy versions used
 `sources.prefab_catalog`; loading normalizes that reference to
 `sources.asset_catalog`. V1 prefab instances additionally migrate to disabled terrain
 pads so opening an old project never changes terrain unexpectedly, while v2 pads are
-preserved. Saving always writes v3 and only the new source-field name.
+preserved. The Python v0.2 reference saves v3 and only the new source-field name.
+
+## Browser editable scenery project v4
+
+The Three.js editor reads project v1–v4, normalizes in memory, and saves only v4. V4
+is v3 plus a required `vegetation_instances` array. Each native record contains
+exactly `id`, `name`, `visible`, `locked`, `vegetation_type`, `asset_id`, `x_m`,
+`z_m`, `rotation_deg`, `scale`, and nullable `source_region_id`. `vegetation_type` is
+`forest_tree`, `scattered_tree`, or `shrub`. IDs and non-null source regions are RFC
+4122 UUIDs; coordinates are finite and inside the inclusive world; scale is positive.
+
+Native vegetation never serializes `terrain_y_m`; the editor derives it from the
+current float32 working terrain. Imported vegetation v1 remains a separate immutable
+reference until the user explicitly converts it. Conversion preserves placement
+fields, maps `model_or_species` to `asset_id`, assigns persistent UUIDs, and skips an
+exact placement already represented in the native collection. Woodland polygons
+remain semantic regions and are not implicit placement collections.
 
 ## Shared asset catalogue v3
 
@@ -154,3 +170,18 @@ runtime placement instructions and are omitted.
 `terrain_y_m` samples therefore describe the pre-PNG surface. A viewer using the
 quantized PNG should compare within half of one vertical code step rather than demand
 bit identity.
+
+## Runtime scenery v3
+
+The browser editor's default runtime export uses schema v3. It is runtime v2 plus the
+required `vegetation_instances` array. Each record contains `id`, `name`, `visible`,
+`vegetation_type`, logical `asset_id`, X/Z, derived `terrain_y_m`, yaw normalized to
+`[0, 360)`, positive scale, nullable `source_region_id`, and `asset_status` (`resolved`
+or `missing`). Locks, terrain pads, source hints, catalogue paths, and renderer state
+are omitted.
+
+Runtime v2 remains a separately labelled legacy export. If native vegetation is
+nonempty, the editor blocks the normal v2 path and its UI requires explicit
+confirmation that those records will be omitted. The separate resampled-vegetation-v1
+export continues to describe only the immutable imported reference and is never
+merged with native v4 vegetation.

@@ -1,7 +1,7 @@
 import {
   AddEntityCommand,
+  BulkAddEntitiesCommand,
   CommandHistory,
-  CompositeCommand,
   UpdateEntityCommand,
   createRemoveCommand,
   type ModelCommand,
@@ -130,7 +130,7 @@ export class EditorStore {
 
   public addEntities(entities: readonly AuthoredEntity[], label: string): boolean {
     if (entities.length === 0) return false;
-    return this.#execute(new CompositeCommand(label, entities.map((entity) => new AddEntityCommand(label, entity))));
+    return this.#execute(new BulkAddEntitiesCommand(label, entities));
   }
 
   public updateEntity(before: AuthoredEntity, after: AuthoredEntity, label: string): boolean {

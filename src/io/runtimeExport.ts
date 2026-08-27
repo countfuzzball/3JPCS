@@ -7,15 +7,51 @@ export async function runtimeSceneryV2Document(
   model: ProjectModel,
   terrain: WorkingTerrain,
   catalog: AssetCatalog | null,
+  allowVegetationOmission = false,
 ): Promise<Record<string, unknown>> {
   model.validate();
-  if (model.list("vegetation").length > 0) {
-    throw new Error("Runtime scenery v2 cannot represent native vegetation instances; use the Milestone 5 runtime v3 exporter when available");
+  if (model.list("vegetation").length > 0 && !allowVegetationOmission) {
+    throw new Error("Runtime scenery v2 cannot represent native vegetation instances; export runtime scenery v3 or explicitly confirm legacy omission");
   }
+  return runtimeBase(model, terrain, catalog, 2);
+}
+
+export async function runtimeSceneryV3Document(
+  model: ProjectModel,
+  terrain: WorkingTerrain,
+  catalog: AssetCatalog | null,
+): Promise<Record<string, unknown>> {
+  model.validate();
+  const base = await runtimeBase(model, terrain, catalog, 3);
+  return {
+    ...base,
+    vegetation_instances: model.vegetationInstances().map((entity) => ({
+      id: entity.id,
+      name: entity.name,
+      visible: entity.visible,
+      vegetation_type: entity.vegetation_type,
+      asset_id: entity.asset_id,
+      x_m: entity.x_m,
+      z_m: entity.z_m,
+      terrain_y_m: terrain.heightAt(entity.x_m, entity.z_m),
+      rotation_deg: normalizeDegrees(entity.rotation_deg),
+      scale: entity.scale,
+      source_region_id: entity.source_region_id,
+      asset_status: catalog?.definition(entity.asset_id) ? "resolved" : "missing",
+    })),
+  };
+}
+
+async function runtimeBase(
+  model: ProjectModel,
+  terrain: WorkingTerrain,
+  catalog: AssetCatalog | null,
+  schemaVersion: 2 | 3,
+): Promise<Record<string, unknown>> {
   assertCompatible(model, terrain);
   return {
     format: "polygon-county-runtime-scenery",
-    schema_version: 2,
+    schema_version: schemaVersion,
     coordinate_system: COORDINATE_SYSTEM,
     world: { ...model.world },
     terrain_float32_sha256: await terrain.sha256(),

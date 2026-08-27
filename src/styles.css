@@ -97,6 +97,8 @@ button { color: inherit; }
 .tool-grid .tool-button strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .tool-group-label { margin: 7px 1px 0; color: #687679; font: 8px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
 .prefab-section { display: grid; gap: 7px; }
+.vegetation-section { display: grid; gap: 7px; }
+.vegetation-section > input { width: 100%; height: 31px; padding: 0 7px; border: 1px solid #3b494c; border-radius: 2px; background: #0e1618; color: #dbe4e6; font-size: 9px; }
 .prefab-section .section-heading { margin-bottom: 5px; }
 .catalogue-picker { display: block; padding: 9px 10px; border: 1px dashed #475558; background: #11191b; cursor: pointer; }
 .catalogue-picker:hover { border-color: var(--accent); }
@@ -124,6 +126,7 @@ button { color: inherit; }
 .prefabs-swatch { border: 1px solid #e79962; border-radius: 1px; background: rgb(231 153 98 / 20%); }
 .pads-swatch { border: 1px dashed #5fd9eb; border-radius: 1px; background: transparent; }
 .vegetation-swatch { background: #75aa61; box-shadow: 0 0 0 2px rgb(117 170 97 / 18%); }
+.native-vegetation-swatch { border: 1px solid #bfe77d; background: #3f9360; box-shadow: 0 0 0 2px rgb(63 147 96 / 18%); }
 .county-settlements-swatch { border: 1px dashed #d7a951; background: rgb(215 169 81 / 18%); }
 .county-roads-swatch { border-radius: 1px; background: repeating-linear-gradient(90deg, #c87868 0 3px, transparent 3px 5px); }
 .county-buildings-swatch { border: 1px solid #ab83c5; border-radius: 1px; background: rgb(171 131 197 / 18%); }

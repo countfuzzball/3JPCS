@@ -26,6 +26,25 @@ import {
   type ReferenceLayerState,
 } from "./ReferenceRenderAdapter";
 import type { CountyReference, VegetationReference } from "../model/references";
+import {
+  VegetationRenderDataManager,
+  type VegetationSyncMetrics,
+} from "./VegetationRenderDataManager";
+
+export interface ViewportPerformanceSnapshot {
+  readonly drawCalls: number;
+  readonly sceneObjectCount: number;
+  readonly geometries: number;
+  readonly textures: number;
+  readonly gpu: { readonly vendor: string; readonly renderer: string } | null;
+  readonly nativeVegetation: VegetationSyncMetrics;
+}
+
+export interface FrameTimeSummary {
+  readonly samples: number;
+  readonly medianMs: number;
+  readonly p95Ms: number;
+}
 
 export interface PrimaryPointerIntent {
   readonly point: PointXZ;
@@ -57,6 +76,7 @@ export class TerrainViewport {
   readonly #geometry = new GeometryRenderAdapter();
   readonly #prefabs = new PrefabRenderAdapter();
   readonly #references = new ReferenceRenderAdapter();
+  readonly #vegetation = new VegetationRenderDataManager();
   #terrain: TerrainSurface | null = null;
   #terrainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null;
   #border: THREE.LineLoop | null = null;
@@ -81,6 +101,7 @@ export class TerrainViewport {
     this.#scene.add(new THREE.AmbientLight(0xffffff, 1));
     this.#scene.add(this.#geometry.group);
     this.#scene.add(this.#prefabs.group);
+    this.#scene.add(this.#vegetation.group);
     this.#scene.add(this.#references.group);
     this.#bindEvents();
     this.#resizeObserver = new ResizeObserver(() => this.#resize());
@@ -133,6 +154,7 @@ export class TerrainViewport {
     selectedVertex: number | null,
     geometryLayers: GeometryLayerState,
     prefabLayers: PrefabLayerState,
+    vegetationLayer: boolean,
     draft: DraftProjection,
     ghost: PrefabGhostProjection | null,
     county: CountyReference | null,
@@ -152,8 +174,71 @@ export class TerrainViewport {
       ghost,
       overlayY,
     );
+    this.#vegetation.sync(model?.vegetationInstances() ?? [], terrain, selectedId, vegetationLayer);
     this.#references.sync(county, vegetation, referenceLayers, overlayY);
     this.invalidate();
+  }
+
+  public pickNativeVegetation(point: PointXZ, toleranceM: number): string | null {
+    return this.#vegetation.pick(point, toleranceM);
+  }
+
+  public performanceSnapshot(renderNow = false): ViewportPerformanceSnapshot {
+    if (renderNow) this.#renderer.render(this.#scene, this.#camera);
+    let sceneObjectCount = 0;
+    this.#scene.traverse(() => { sceneObjectCount += 1; });
+    return {
+      drawCalls: this.#renderer.info.render.calls,
+      sceneObjectCount,
+      geometries: this.#renderer.info.memory.geometries,
+      textures: this.#renderer.info.memory.textures,
+      gpu: this.#gpuInformation(),
+      nativeVegetation: this.#vegetation.metrics,
+    };
+  }
+
+  #gpuInformation(): { readonly vendor: string; readonly renderer: string } | null {
+    const context = this.#renderer.getContext();
+    const extension = context.getExtension("WEBGL_debug_renderer_info") as DebugRendererInfo | null;
+    if (!extension) return null;
+    return {
+      vendor: String(context.getParameter(extension.UNMASKED_VENDOR_WEBGL)),
+      renderer: String(context.getParameter(extension.UNMASKED_RENDERER_WEBGL)),
+    };
+  }
+
+  public async benchmarkPanZoomFrames(frameCount = 60, warmupFrames = 10): Promise<FrameTimeSummary> {
+    const original = this.#view;
+    const samples: number[] = [];
+    let frame = 0;
+    let previous = performance.now();
+    await new Promise<void>((resolve) => {
+      const step = (now: number): void => {
+        const delta = now - previous;
+        previous = now;
+        const phase = frame * 0.15;
+        this.#view = {
+          centerX: original.centerX + Math.sin(phase) * original.heightM * 0.03,
+          centerZ: original.centerZ + Math.cos(phase * 0.8) * original.heightM * 0.03,
+          heightM: original.heightM * (1 + Math.sin(phase * 0.6) * 0.025),
+        };
+        this.#updateCamera();
+        this.#renderer.render(this.#scene, this.#camera);
+        if (frame >= warmupFrames) samples.push(delta);
+        frame += 1;
+        if (frame < warmupFrames + frameCount) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+    this.#view = original;
+    this.#updateCamera();
+    samples.sort((left, right) => left - right);
+    return {
+      samples: samples.length,
+      medianMs: percentile(samples, 0.5),
+      p95Ms: percentile(samples, 0.95),
+    };
   }
 
   public worldUnitsPerPixel(): number {
@@ -197,9 +282,11 @@ export class TerrainViewport {
     this.#geometry.dispose();
     this.#prefabs.dispose();
     this.#references.dispose();
+    this.#vegetation.dispose();
     this.#scene.remove(this.#geometry.group);
     this.#scene.remove(this.#prefabs.group);
     this.#scene.remove(this.#references.group);
+    this.#scene.remove(this.#vegetation.group);
     this.#renderer.dispose();
     this.#renderer.domElement.remove();
   }
@@ -369,4 +456,15 @@ export class TerrainViewport {
       this.#border = null;
     }
   }
+}
+
+function percentile(sorted: readonly number[], fraction: number): number {
+  if (sorted.length === 0) return 0;
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1));
+  return sorted[index] ?? 0;
+}
+
+interface DebugRendererInfo {
+  readonly UNMASKED_VENDOR_WEBGL: number;
+  readonly UNMASKED_RENDERER_WEBGL: number;
 }

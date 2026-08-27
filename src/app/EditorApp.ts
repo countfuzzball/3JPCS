@@ -8,7 +8,7 @@ import {
   readJsonFile,
   type SourceKey,
 } from "../io/projectFiles";
-import { runtimeSceneryV2Document } from "../io/runtimeExport";
+import { runtimeSceneryV2Document, runtimeSceneryV3Document } from "../io/runtimeExport";
 import { AssetCatalog, type AssetDefinition } from "../model/assetCatalog";
 import type { PointXZ } from "../model/coordinates";
 import {
@@ -17,6 +17,7 @@ import {
   PLACE_TYPES,
   ROAD_CLASSES,
   ROAD_SURFACES,
+  VEGETATION_TYPES,
   newEntityId,
   type AuthoredEntity,
   type GeometryEntity,
@@ -25,6 +26,7 @@ import {
   type PointTuple,
   type PrefabInstance,
   type Road,
+  type VegetationInstance,
 } from "../model/entities";
 import {
   clampPoint,
@@ -43,30 +45,39 @@ import {
   movePrefab,
   prefabFootprint,
 } from "../interaction/prefabEditing";
+import { moveVegetation, rotateVegetation } from "../interaction/vegetationEditing";
 import {
   TerrainViewport,
   type CanvasClickIntent,
   type PrimaryPointerIntent,
 } from "../rendering/TerrainViewport";
 import type { TerrainLayerState } from "../rendering/terrain/terrainTexture";
-import { convertCountyToNative, parseCountyReference, parseVegetationReference } from "../model/references";
+import {
+  convertCountyToNative,
+  convertVegetationToNative,
+  parseCountyReference,
+  parseVegetationReference,
+} from "../model/references";
 import type { TerrainReference } from "../terrain/TerrainReference";
 import type { TerrainSurface } from "../terrain/TerrainSurface";
 import type { WorkingTerrain } from "../terrain/WorkingTerrain";
 import { buildRootLayout, type EditorElements } from "../ui/rootLayout";
 import { EditorStore, type EditorState } from "./EditorStore";
+import type { SyntheticBenchmarkScene } from "../benchmark/syntheticScene";
+import type { FrameTimeSummary, ViewportPerformanceSnapshot } from "../rendering/TerrainViewport";
 
 type Tool = "select"
   | `place:${typeof PLACE_TYPES[number]}`
   | `land:${typeof LAND_USE_TYPES[number]}`
   | "road"
   | "hedgerow"
-  | "prefab";
+  | "prefab"
+  | "vegetation";
 
 interface DragState {
   readonly id: string;
   readonly start: PointXZ;
-  readonly original: GeometryEntity | PrefabInstance;
+  readonly original: GeometryEntity | PrefabInstance | VegetationInstance;
   readonly vertexIndex: number | null;
 }
 
@@ -82,6 +93,7 @@ const TOOL_INSTRUCTIONS: Record<Tool, string> = {
   road: "Click ordered road control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
   hedgerow: "Click ordered hedgerow control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
   prefab: "Choose a catalogue asset, hover to preview its footprint/front, then click once to place it.",
+  vegetation: "Choose a type and logical species/asset ID, then click once to place an editable vegetation record.",
 };
 
 export class EditorApp {
@@ -122,6 +134,74 @@ export class EditorApp {
     this.#viewport.dispose();
   }
 
+  public loadBenchmarkScene(scene: SyntheticBenchmarkScene): ViewportPerformanceSnapshot {
+    this.#resetInteraction();
+    this.#store.openProject(scene.model, scene.terrain, {
+      vegetation: null,
+      county: null,
+      assetCatalog: scene.catalog,
+      warnings: [],
+    });
+    this.#saveHandle = null;
+    this.#projectFileName = "polygon-county-benchmark.scenery.json";
+    this.#elements.statusMessage.textContent = `Benchmark ready — ${scene.model.vegetationInstances().length.toLocaleString()} editable vegetation records`;
+    return this.#viewport.performanceSnapshot(true);
+  }
+
+  public benchmarkSelectVegetation(point: PointXZ): {
+    readonly id: string | null;
+    readonly latencyMs: number;
+  } {
+    const start = performance.now();
+    const id = this.#viewport.pickNativeVegetation(point, 2);
+    this.#selectedId = id;
+    this.#selectedVertex = null;
+    this.#renderInteraction();
+    this.#viewport.performanceSnapshot(true);
+    return { id, latencyMs: performance.now() - start };
+  }
+
+  public benchmarkMoveVegetation(id: string, deltaX: number): {
+    readonly latencyMs: number;
+    readonly snapshot: ViewportPerformanceSnapshot;
+  } {
+    const model = this.#store.state.model;
+    const before = model?.get(id);
+    if (!model || before?.kind !== "vegetation") throw new Error("benchmark vegetation target is missing");
+    const after = moveVegetation(before, { x: deltaX, z: 0 }, model.bounds);
+    const start = performance.now();
+    this.#store.updateEntity(before, after, "Benchmark move vegetation");
+    const snapshot = this.#viewport.performanceSnapshot(true);
+    return { latencyMs: performance.now() - start, snapshot };
+  }
+
+  public benchmarkTerrainPadRefresh(prefabId: string): {
+    readonly latencyMs: number;
+    readonly snapshot: ViewportPerformanceSnapshot;
+  } {
+    const model = this.#store.state.model;
+    const before = model?.get(prefabId);
+    if (!model || before?.kind !== "prefab") throw new Error("benchmark prefab target is missing");
+    const after: PrefabInstance = {
+      ...before,
+      terrain_pad: { ...before.terrain_pad, enabled: true, width_m: 24, depth_m: 18, blend_m: 10 },
+    };
+    const start = performance.now();
+    this.#store.updateEntity(before, after, "Benchmark terrain-pad refresh");
+    const snapshot = this.#viewport.performanceSnapshot(true);
+    return { latencyMs: performance.now() - start, snapshot };
+  }
+
+  public benchmarkSerialization(): { readonly latencyMs: number; readonly bytes: number } {
+    const start = performance.now();
+    const json = JSON.stringify(this.#store.toDocument());
+    return { latencyMs: performance.now() - start, bytes: new TextEncoder().encode(json).byteLength };
+  }
+
+  public benchmarkPanZoomFrames(frameCount?: number, warmupFrames?: number): Promise<FrameTimeSummary> {
+    return this.#viewport.benchmarkPanZoomFrames(frameCount, warmupFrames);
+  }
+
   #bindEvents(): void {
     this.#elements.newProjectButton.addEventListener("click", () => {
       if (this.#store.state.dirty && !window.confirm("Discard the current unsaved project and choose new terrain sources?")) return;
@@ -155,7 +235,9 @@ export class EditorApp {
     this.#elements.vegetationInput.addEventListener("change", () => { void this.#loadVegetationReference(); });
     this.#elements.countyInput.addEventListener("change", () => { void this.#loadCountyReference(); });
     this.#elements.convertCountyButton.addEventListener("click", () => this.#convertCountyReference());
+    this.#elements.convertVegetationButton.addEventListener("click", () => this.#convertVegetationReference());
     this.#elements.exportRuntimeButton.addEventListener("click", () => { void this.#exportRuntime(); });
+    this.#elements.exportRuntimeV2Button.addEventListener("click", () => { void this.#exportLegacyRuntime(); });
     this.#elements.exportTerrainButton.addEventListener("click", () => { void this.#exportFinalTerrain(); });
     this.#elements.exportVegetationButton.addEventListener("click", () => this.#exportResampledVegetation());
     this.#elements.assetSelect.addEventListener("change", () => this.#syncProjection());
@@ -175,6 +257,7 @@ export class EditorApp {
       this.#elements.layerHedgerows,
       this.#elements.layerPrefabs,
       this.#elements.layerTerrainPads,
+      this.#elements.layerNativeVegetation,
     ]) {
       input.addEventListener("change", () => this.#authoringLayerChanged());
     }
@@ -369,18 +452,54 @@ export class EditorApp {
       : "County conversion added no objects; all source UUIDs already exist";
   }
 
+  #convertVegetationReference(): void {
+    const model = this.#store.state.model;
+    const vegetation = this.#store.state.vegetationReference;
+    if (!model || !vegetation) return;
+    const conversion = convertVegetationToNative(model, vegetation);
+    const changed = this.#store.addEntities(
+      conversion.entities,
+      "Convert vegetation reference to editable instances",
+    );
+    this.#store.addWarnings(conversion.warnings);
+    this.#elements.statusMessage.textContent = changed
+      ? `Converted ${conversion.entities.length.toLocaleString()} vegetation records to one undoable native edit${conversion.skippedDuplicates > 0 ? ` · skipped ${conversion.skippedDuplicates.toLocaleString()} duplicates` : ""}`
+      : "Vegetation conversion added no records; every source placement is already represented";
+  }
+
   async #exportRuntime(): Promise<void> {
     const { model, workingTerrain, assetCatalog } = this.#store.state;
     if (!model || !workingTerrain) return;
     try {
       this.#elements.exportRuntimeButton.disabled = true;
-      const document = await runtimeSceneryV2Document(model, workingTerrain, assetCatalog);
-      downloadJson(document, `${fileStem(model.name)}.runtime-scenery-v2.json`);
-      this.#elements.statusMessage.textContent = "Exported flattened runtime scenery v2";
+      const document = await runtimeSceneryV3Document(model, workingTerrain, assetCatalog);
+      downloadJson(document, `${fileStem(model.name)}.runtime-scenery-v3.json`);
+      this.#elements.statusMessage.textContent = `Exported runtime scenery v3 with ${model.vegetationInstances().length.toLocaleString()} native vegetation records`;
     } catch (error) {
       this.#elements.statusMessage.textContent = `Runtime export failed — ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       this.#elements.exportRuntimeButton.disabled = !this.#store.state.model;
+    }
+  }
+
+  async #exportLegacyRuntime(): Promise<void> {
+    const { model, workingTerrain, assetCatalog } = this.#store.state;
+    if (!model || !workingTerrain) return;
+    const nativeCount = model.vegetationInstances().length;
+    if (nativeCount > 0 && !window.confirm(
+      `Legacy runtime scenery v2 cannot represent ${nativeCount.toLocaleString()} native vegetation records. Export v2 without those records anyway?`,
+    )) return;
+    try {
+      this.#elements.exportRuntimeV2Button.disabled = true;
+      const document = await runtimeSceneryV2Document(model, workingTerrain, assetCatalog, nativeCount > 0);
+      downloadJson(document, `${fileStem(model.name)}.runtime-scenery-v2.json`);
+      this.#elements.statusMessage.textContent = nativeCount > 0
+        ? `Exported legacy runtime scenery v2 after explicitly omitting ${nativeCount.toLocaleString()} native vegetation records`
+        : "Exported legacy runtime scenery v2";
+    } catch (error) {
+      this.#elements.statusMessage.textContent = `Legacy runtime export failed — ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.#elements.exportRuntimeV2Button.disabled = !this.#store.state.model;
     }
   }
 
@@ -438,15 +557,22 @@ export class EditorApp {
     for (const button of this.#elements.toolButtons) {
       button.disabled = !state.model || (button.dataset.tool === "prefab" && (!state.assetCatalog || state.assetCatalog.assets.length === 0));
     }
+    this.#elements.toolInstructions.textContent = state.model
+      ? TOOL_INSTRUCTIONS[this.#tool]
+      : "Create a terrain project to enable geometry authoring.";
     this.#elements.assetCatalogInput.disabled = !state.model;
+    this.#elements.vegetationTypeSelect.disabled = !state.model;
+    this.#elements.vegetationAssetId.disabled = !state.model;
     this.#elements.vegetationInput.disabled = !state.model;
     this.#elements.countyInput.disabled = !state.model;
     this.#elements.convertCountyButton.disabled = !state.model || !state.countyReference;
+    this.#elements.convertVegetationButton.disabled = !state.model || !state.vegetationReference;
     this.#elements.exportRuntimeButton.disabled = !state.model || !state.workingTerrain;
+    this.#elements.exportRuntimeV2Button.disabled = !state.model || !state.workingTerrain;
     this.#elements.exportTerrainButton.disabled = !state.model || !state.workingTerrain;
     this.#elements.exportVegetationButton.disabled = !state.model || !state.workingTerrain || !state.vegetationReference;
     this.#elements.vegetationSummary.textContent = state.vegetationReference
-      ? `${state.vegetationReference.objects.length.toLocaleString()} non-editable records · ${state.vegetationReference.project_name}`
+      ? `${state.vegetationReference.objects.length.toLocaleString()} non-editable records · ${state.model?.vegetationInstances().length.toLocaleString() ?? "0"} native · ${state.vegetationReference.project_name}`
       : "No imported vegetation reference.";
     this.#elements.countySummary.textContent = state.countyReference
       ? `${state.countyReference.settlement_regions.length.toLocaleString()} settlements · ${state.countyReference.roads.length.toLocaleString()} roads · ${state.countyReference.buildings.length.toLocaleString()} buildings`
@@ -469,6 +595,10 @@ export class EditorApp {
     if (!this.#store.state.model) return;
     if (tool === "prefab" && !this.#selectedAsset()) {
       this.#elements.statusMessage.textContent = "Load an asset catalogue and choose an asset before placing a prefab";
+      return;
+    }
+    if (tool === "vegetation" && this.#elements.vegetationAssetId.value.trim().length === 0) {
+      this.#elements.statusMessage.textContent = "Enter a logical vegetation species/asset ID before placing vegetation";
       return;
     }
     this.#tool = tool;
@@ -504,11 +634,17 @@ export class EditorApp {
       this.#store.state.assetCatalog,
       this.#elements.layerPrefabs.checked,
     );
+    const vegetationId = this.#viewport.pickNativeVegetation(
+      point,
+      this.#viewport.worldUnitsPerPixel() * 8,
+    );
     const hit = geometryHit && geometryHit.vertexIndex !== null
       ? geometryHit
       : prefab
         ? { id: prefab.id, vertexIndex: null }
-        : geometryHit;
+        : vegetationId
+          ? { id: vegetationId, vertexIndex: null }
+          : geometryHit;
     this.#selectedId = hit?.id ?? null;
     this.#selectedVertex = hit?.vertexIndex ?? null;
     const entity = hit ? model.get(hit.id) : undefined;
@@ -529,7 +665,7 @@ export class EditorApp {
         return;
       }
     }
-    if (entity && !entity.locked && (isGeometry(entity) || entity.kind === "prefab")) {
+    if (entity && !entity.locked) {
       this.#drag = { id: entity.id, start: point, original: entity, vertexIndex: hit?.vertexIndex ?? null };
     }
     this.#renderInteraction();
@@ -542,7 +678,9 @@ export class EditorApp {
     const delta = { x: current.x - this.#drag.start.x, z: current.z - this.#drag.start.z };
     const replacement = this.#drag.original.kind === "prefab"
       ? movePrefab(this.#drag.original, delta, model.bounds)
-      : moveGeometryEntity(this.#drag.original, delta, model.bounds, this.#drag.vertexIndex);
+      : this.#drag.original.kind === "vegetation"
+        ? moveVegetation(this.#drag.original, delta, model.bounds)
+        : moveGeometryEntity(this.#drag.original, delta, model.bounds, this.#drag.vertexIndex);
     this.#store.replaceLive(replacement);
   }
 
@@ -552,11 +690,15 @@ export class EditorApp {
     const drag = this.#drag;
     this.#drag = null;
     const final = model.get(drag.id);
-    if (final && (isGeometry(final) || final.kind === "prefab")) {
+    if (final) {
       this.#store.recordAppliedUpdate(
         drag.original,
         final,
-        drag.original.kind === "prefab" ? "Move prefab" : drag.vertexIndex === null ? "Move object" : "Move vertex",
+        drag.original.kind === "prefab"
+          ? "Move prefab"
+          : drag.original.kind === "vegetation"
+            ? "Move vegetation"
+            : drag.vertexIndex === null ? "Move object" : "Move vertex",
       );
     }
   }
@@ -569,6 +711,10 @@ export class EditorApp {
       this.#placePrefab(clampPoint(intent.point, model.bounds));
       return;
     }
+    if (this.#tool === "vegetation") {
+      this.#placeVegetation(clampPoint(intent.point, model.bounds));
+      return;
+    }
     this.#draft.push(clampPoint(intent.point, model.bounds));
     this.#elements.statusMessage.textContent = `${String(this.#draft.length)} draft point${this.#draft.length === 1 ? "" : "s"} — Enter or double-click to finish`;
     this.#syncProjection();
@@ -576,7 +722,7 @@ export class EditorApp {
 
   #finishDraft(): void {
     const model = this.#store.state.model;
-    if (!model || this.#tool === "select" || this.#tool === "prefab") return;
+    if (!model || this.#tool === "select" || this.#tool === "prefab" || this.#tool === "vegetation") return;
     const points = dedupeDraft(this.#draft);
     const polygon = this.#tool.startsWith("place:") || this.#tool.startsWith("land:");
     const required = polygon ? 3 : 2;
@@ -670,6 +816,34 @@ export class EditorApp {
     this.#renderInspector();
   }
 
+  #placeVegetation(point: PointXZ): void {
+    const model = this.#store.state.model;
+    if (!model) return;
+    const assetId = this.#elements.vegetationAssetId.value.trim();
+    const vegetationType = this.#elements.vegetationTypeSelect.value;
+    if (assetId.length === 0 || !VEGETATION_TYPES.includes(vegetationType as VegetationInstance["vegetation_type"])) return;
+    const entity: VegetationInstance = {
+      kind: "vegetation",
+      id: newEntityId(),
+      name: model.nextUniqueName(this.#store.state.assetCatalog?.definition(assetId)?.display_name ?? labelFor(assetId)),
+      visible: true,
+      locked: false,
+      vegetation_type: vegetationType as VegetationInstance["vegetation_type"],
+      asset_id: assetId,
+      x_m: point.x,
+      z_m: point.z,
+      rotation_deg: 0,
+      scale: 1,
+      source_region_id: null,
+    };
+    this.#selectedId = entity.id;
+    this.#selectedVertex = null;
+    this.#store.addEntity(entity, `Place ${entity.name}`);
+    this.#elements.statusMessage.textContent = `Placed ${entity.name}`;
+    this.#setTool("select");
+    this.#renderInspector();
+  }
+
   #cancelInteraction(): void {
     if (this.#drag) {
       this.#store.replaceLive(this.#drag.original);
@@ -722,14 +896,16 @@ export class EditorApp {
   #rotateSelected(deltaDeg: number): void {
     const model = this.#store.state.model;
     const before = this.#selectedId ? model?.get(this.#selectedId) : undefined;
-    if (before?.kind !== "prefab") return;
+    if (before?.kind !== "prefab" && before?.kind !== "vegetation") return;
     if (before.locked) {
       this.#elements.statusMessage.textContent = `${before.name} is locked — unlock it before rotating`;
       return;
     }
-    const rotation = normalizeDegrees(before.rotation_deg + deltaDeg);
-    const after: PrefabInstance = { ...before, rotation_deg: rotation };
-    this.#store.updateEntity(before, after, "Rotate prefab");
+    const after = before.kind === "vegetation"
+      ? rotateVegetation(before, deltaDeg)
+      : { ...before, rotation_deg: normalizeDegrees(before.rotation_deg + deltaDeg) };
+    const rotation = after.rotation_deg;
+    this.#store.updateEntity(before, after, before.kind === "vegetation" ? "Rotate vegetation" : "Rotate prefab");
     this.#elements.statusMessage.textContent = `Rotated ${after.name} to ${rotation.toFixed(0)}°`;
   }
 
@@ -750,7 +926,7 @@ export class EditorApp {
     const model = this.#store.state.model;
     if (!model || !this.#selectedId) return;
     const before = model.get(this.#selectedId);
-    if (!before || (!isGeometry(before) && before.kind !== "prefab")) return;
+    if (!before) return;
     const data = new FormData(form);
     try {
       const common = {
@@ -758,7 +934,7 @@ export class EditorApp {
         visible: data.get("visible") === "on",
         locked: data.get("locked") === "on",
       };
-      let after: GeometryEntity | PrefabInstance;
+      let after: GeometryEntity | PrefabInstance | VegetationInstance;
       switch (before.kind) {
         case "place":
           after = { ...before, ...common, place_type: requiredText(data, "place_type") as PlaceRegion["place_type"] };
@@ -806,6 +982,23 @@ export class EditorApp {
           };
           if (before.locked && prefabSpatialFieldsChanged(before, after)) {
             throw new Error("Unlock this prefab and apply before changing its footprint, transform, or terrain pad");
+          }
+          break;
+        }
+        case "vegetation": {
+          after = {
+            ...before,
+            ...common,
+            vegetation_type: requiredText(data, "vegetation_type") as VegetationInstance["vegetation_type"],
+            asset_id: requiredText(data, "asset_id"),
+            x_m: requiredNumber(data, "x_m"),
+            z_m: requiredNumber(data, "z_m"),
+            rotation_deg: normalizeDegrees(requiredNumber(data, "rotation_deg")),
+            scale: requiredNumber(data, "scale"),
+            source_region_id: optionalText(data, "source_region_id"),
+          };
+          if (before.locked && vegetationSpatialFieldsChanged(before, after)) {
+            throw new Error("Unlock this vegetation instance and apply before changing its transform");
           }
           break;
         }
@@ -916,6 +1109,7 @@ export class EditorApp {
       this.#selectedVertex,
       this.#geometryLayers(),
       this.#prefabLayers(),
+      this.#elements.layerNativeVegetation.checked,
       {
         points: this.#draft.map((point) => [point.x, point.z] as PointTuple),
         hover: this.#draftHover ? [this.#draftHover.x, this.#draftHover.z] : null,
@@ -933,7 +1127,7 @@ export class EditorApp {
     const model = this.#store.state.model;
     const terrain = this.#store.state.workingTerrain;
     const selected = this.#selectedId ? model?.get(this.#selectedId) : undefined;
-    if (selected && model && terrain && (isGeometry(selected) || selected.kind === "prefab")) {
+    if (selected && model && terrain) {
       this.#elements.inspectorTitle.textContent = selected.name;
       this.#elements.inspector.className = "object-inspector";
       this.#elements.inspector.innerHTML = propertyForm(
@@ -958,6 +1152,7 @@ export class EditorApp {
       ["Places / land use", `${model.list("place").length.toLocaleString()} / ${model.list("land_use").length.toLocaleString()}`],
       ["Roads / hedgerows", `${model.list("road").length.toLocaleString()} / ${model.list("linear_feature").length.toLocaleString()}`],
       ["Prefabs / catalogue", `${model.list("prefab").length.toLocaleString()} / ${(this.#store.state.assetCatalog?.assets.length ?? 0).toLocaleString()}`],
+      ["Native vegetation", model.vegetationInstances().length.toLocaleString()],
       ["Elevation range", `${terrain.minimumElevationM.toFixed(2)} — ${terrain.maximumElevationM.toFixed(2)} m`],
     ];
     this.#elements.inspector.className = "inspector-data";
@@ -1016,7 +1211,7 @@ export class EditorApp {
         case "road": return this.#elements.layerRoads.checked;
         case "linear_feature": return this.#elements.layerHedgerows.checked;
         case "prefab": return this.#elements.layerPrefabs.checked;
-        default: return true;
+        case "vegetation": return this.#elements.layerNativeVegetation.checked;
       }
     })();
     if (!remainsVisible) {
@@ -1063,13 +1258,16 @@ export class EditorApp {
       )) return false;
       return true;
     });
-    const missingAssets = state.model && state.assetCatalog
-      ? [...new Set(state.model.prefabInstances()
-        .filter((prefab) => !state.assetCatalog?.definition(prefab.asset_id))
-        .map((prefab) => prefab.asset_id))].sort()
+    const logicalAssetRecords = state.model
+      ? [...state.model.prefabInstances(), ...state.model.vegetationInstances()]
       : [];
-    if (state.model && state.model.prefabInstances().length > 0 && !state.assetCatalog) {
-      warnings.push("Project contains prefab instances but no usable asset catalogue is loaded.");
+    const missingAssets = state.model && state.assetCatalog
+      ? [...new Set(logicalAssetRecords
+        .filter((entity) => !state.assetCatalog?.definition(entity.asset_id))
+        .map((entity) => entity.asset_id))].sort()
+      : [];
+    if (logicalAssetRecords.length > 0 && !state.assetCatalog) {
+      warnings.push("Project contains logical prefab or vegetation assets but no usable asset catalogue is loaded.");
     } else if (missingAssets.length > 0) {
       warnings.push(`Missing asset catalogue entries: ${missingAssets.join(", ")}`);
     }
@@ -1096,7 +1294,7 @@ export class EditorApp {
 }
 
 function propertyForm(
-  entity: GeometryEntity | PrefabInstance,
+  entity: GeometryEntity | PrefabInstance | VegetationInstance,
   selectedVertex: number | null,
   model: NonNullable<EditorState["model"]>,
   catalog: AssetCatalog | null,
@@ -1175,10 +1373,28 @@ function propertyForm(
       }
       break;
     }
+    case "vegetation": {
+      fields.push(selectField("Vegetation type", "vegetation_type", entity.vegetation_type, VEGETATION_TYPES));
+      fields.push(textField("Logical species / asset ID", "asset_id", entity.asset_id));
+      fields.push(`<p class="property-heading">Transform</p>`);
+      fields.push(numberField("X (m)", "x_m", entity.x_m));
+      fields.push(numberField("Z (m)", "z_m", entity.z_m));
+      fields.push(numberField("Rotation (deg)", "rotation_deg", entity.rotation_deg));
+      fields.push(numberField("Scale", "scale", entity.scale));
+      fields.push(`<div class="property-inline-actions">
+        <button class="button" data-action="rotate-negative" type="button" ${locked ? "disabled" : ""}>Rotate −15°</button>
+        <button class="button" data-action="rotate-positive" type="button" ${locked ? "disabled" : ""}>Rotate +15°</button>
+      </div>`);
+      fields.push(optionalTextField("Source region UUID", "source_region_id", entity.source_region_id ?? ""));
+      fields.push(`<p class="property-explanation">Terrain Y is derived from the current working terrain and is never stored in the editable project.</p>`);
+      break;
+    }
   }
   const meta = entity.kind === "prefab"
     ? `${catalog?.definition(entity.asset_id) ? "resolved catalogue asset" : "missing catalogue asset"} · pad ${entity.terrain_pad.enabled ? "enabled" : "disabled"}${locked ? " · locked spatially" : ""}`
-    : `${entity.points.length.toLocaleString()} vertices${selectedVertex === null ? "" : ` · vertex ${String(selectedVertex + 1)} selected`}${locked ? " · locked spatially" : ""}`;
+    : entity.kind === "vegetation"
+      ? `${catalog?.definition(entity.asset_id) ? "resolved catalogue asset" : "missing catalogue asset"} · terrain Y ${workingTerrain.heightAt(entity.x_m, entity.z_m).toFixed(2)} m${locked ? " · locked spatially" : ""}`
+      : `${entity.points.length.toLocaleString()} vertices${selectedVertex === null ? "" : ` · vertex ${String(selectedVertex + 1)} selected`}${locked ? " · locked spatially" : ""}`;
   return `
     <div class="object-kind"><strong>${escapeHtml(kind)}</strong><code title="${entity.id}">${entity.id}</code></div>
     <form class="property-form" data-property-form>
@@ -1187,7 +1403,7 @@ function propertyForm(
       <div class="property-error" data-property-error hidden></div>
       <div class="property-actions">
         <button class="button button-primary" type="submit">Apply properties</button>
-        ${entity.kind === "prefab" ? "" : `<button class="button" data-action="delete-vertex" type="button" ${selectedVertex === null || locked ? "disabled" : ""}>Delete vertex</button>`}
+        ${isGeometry(entity) ? `<button class="button" data-action="delete-vertex" type="button" ${selectedVertex === null || locked ? "disabled" : ""}>Delete vertex</button>` : ""}
         <button class="button button-danger" data-action="delete-object" type="button" ${locked ? "disabled" : ""}>Delete object</button>
       </div>
     </form>`;
@@ -1195,6 +1411,10 @@ function propertyForm(
 
 function textField(label: string, name: string, value: string): string {
   return `<label for="property-${name}">${label}</label><input id="property-${name}" name="${name}" type="text" value="${escapeHtml(value)}" required />`;
+}
+
+function optionalTextField(label: string, name: string, value: string): string {
+  return `<label for="property-${name}">${label}</label><input id="property-${name}" name="${name}" type="text" value="${escapeHtml(value)}" />`;
 }
 
 function numberField(label: string, name: string, value: number): string {
@@ -1218,13 +1438,14 @@ function selectOptionsField(
   return `<label for="property-${name}">${label}</label><select id="property-${name}" name="${name}">${values.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`;
 }
 
-function entityKindLabel(entity: GeometryEntity | PrefabInstance): string {
+function entityKindLabel(entity: GeometryEntity | PrefabInstance | VegetationInstance): string {
   switch (entity.kind) {
     case "place": return "Place region";
     case "land_use": return entity.land_use_type === "woodland" ? "Woodland region" : "Land-use region";
     case "road": return "Native road";
     case "linear_feature": return "Hedgerow";
     case "prefab": return "Prefab instance";
+    case "vegetation": return "Native vegetation instance";
   }
 }
 
@@ -1251,6 +1472,7 @@ function isTool(value: string | undefined): value is Tool {
     || value === "road"
     || value === "hedgerow"
     || value === "prefab"
+    || value === "vegetation"
     || PLACE_TYPES.some((kind) => value === `place:${kind}`)
     || LAND_USE_TYPES.some((kind) => value === `land:${kind}`);
 }
@@ -1267,6 +1489,13 @@ function prefabSpatialFieldsChanged(before: PrefabInstance, after: PrefabInstanc
     || before.rotation_deg !== after.rotation_deg
     || before.scale !== after.scale
     || JSON.stringify(before.terrain_pad) !== JSON.stringify(after.terrain_pad);
+}
+
+function vegetationSpatialFieldsChanged(before: VegetationInstance, after: VegetationInstance): boolean {
+  return before.x_m !== after.x_m
+    || before.z_m !== after.z_m
+    || before.rotation_deg !== after.rotation_deg
+    || before.scale !== after.scale;
 }
 
 function normalizeDegrees(value: number): number {

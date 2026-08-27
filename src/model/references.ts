@@ -3,6 +3,7 @@ import {
   DEFAULT_TERRAIN_PAD,
   ROAD_SURFACES,
   VEGETATION_TYPES,
+  newEntityId,
   requireArray,
   requireBoolean,
   requireEnum,
@@ -17,6 +18,7 @@ import {
   type PointTuple,
   type PrefabInstance,
   type Road,
+  type VegetationInstance,
   type WorldBounds,
 } from "./entities";
 import { ContractError } from "./errors";
@@ -81,6 +83,12 @@ export interface CountyReference {
 export interface CountyConversion {
   readonly entities: readonly AuthoredEntity[];
   readonly warnings: readonly string[];
+}
+
+export interface VegetationConversion {
+  readonly entities: readonly VegetationInstance[];
+  readonly warnings: readonly string[];
+  readonly skippedDuplicates: number;
 }
 
 export function parseVegetationReference(value: unknown, world: WorldBounds): VegetationReference {
@@ -260,6 +268,52 @@ export function convertCountyToNative(model: ProjectModel, county: CountyReferen
   return { entities, warnings };
 }
 
+export function convertVegetationToNative(
+  model: ProjectModel,
+  reference: VegetationReference,
+  idFactory: () => string = newEntityId,
+): VegetationConversion {
+  const occupiedIds = new Set(model.all().map((entity) => entity.id));
+  const occupiedNames = new Set(model.all().map((entity) => entity.name));
+  const represented = new Set(model.vegetationInstances().map(vegetationConversionKey));
+  const counters = new Map<string, number>();
+  const entities: VegetationInstance[] = [];
+  let skippedDuplicates = 0;
+
+  for (const source of reference.objects) {
+    const key = referenceConversionKey(source);
+    if (represented.has(key)) {
+      skippedDuplicates += 1;
+      continue;
+    }
+    let id = idFactory();
+    while (occupiedIds.has(id)) id = idFactory();
+    occupiedIds.add(id);
+    const name = nextImportedVegetationName(source.model_or_species, occupiedNames, counters);
+    const entity: VegetationInstance = Object.freeze({
+      kind: "vegetation",
+      id,
+      name,
+      visible: true,
+      locked: false,
+      vegetation_type: source.type,
+      asset_id: source.model_or_species,
+      x_m: source.x_m,
+      z_m: source.z_m,
+      rotation_deg: source.rotation_deg,
+      scale: source.scale,
+      source_region_id: source.source_region_id,
+    });
+    entities.push(entity);
+    represented.add(key);
+  }
+
+  const warnings = skippedDuplicates === 0
+    ? []
+    : [`Skipped ${String(skippedDuplicates)} vegetation reference record${skippedDuplicates === 1 ? "" : "s"} already represented by native instances.`];
+  return { entities, warnings, skippedDuplicates };
+}
+
 export function countyBuildingFootprint(building: CountyBuildingReference): readonly PointTuple[] {
   const halfWidth = building.footprint_width_m / 2;
   const halfDepth = building.footprint_depth_m / 2;
@@ -294,4 +348,34 @@ function assertUniqueCountyIds(items: readonly { readonly id: string }[]): void 
     if (ids.has(item.id)) throw new ContractError(`duplicate county object id: ${item.id}`);
     ids.add(item.id);
   }
+}
+
+function vegetationConversionKey(item: VegetationInstance): string {
+  return JSON.stringify([
+    item.vegetation_type, item.asset_id, item.x_m, item.z_m,
+    item.rotation_deg, item.scale, item.source_region_id,
+  ]);
+}
+
+function referenceConversionKey(item: VegetationReferenceObject): string {
+  return JSON.stringify([
+    item.type, item.model_or_species, item.x_m, item.z_m,
+    item.rotation_deg, item.scale, item.source_region_id,
+  ]);
+}
+
+function nextImportedVegetationName(
+  stem: string,
+  occupied: Set<string>,
+  counters: Map<string, number>,
+): string {
+  let suffix = counters.get(stem) ?? 1;
+  let candidate = `${stem} ${String(suffix)}`;
+  while (occupied.has(candidate)) {
+    suffix += 1;
+    candidate = `${stem} ${String(suffix)}`;
+  }
+  counters.set(stem, suffix + 1);
+  occupied.add(candidate);
+  return candidate;
 }

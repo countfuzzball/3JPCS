@@ -1,6 +1,6 @@
 {
   "name": "polygon-county-scenery-editor-web",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "test:browser": "playwright test",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "prebenchmark": "pnpm build",
     "benchmark": "node scripts/benchmark.mjs",
     "fixtures": "node scripts/generate-terrain-fixtures.mjs"
   },

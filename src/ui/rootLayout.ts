@@ -11,12 +11,16 @@ export interface EditorElements {
   readonly assetCatalogInput: HTMLInputElement;
   readonly assetSelect: HTMLSelectElement;
   readonly assetSummary: HTMLElement;
+  readonly vegetationTypeSelect: HTMLSelectElement;
+  readonly vegetationAssetId: HTMLInputElement;
   readonly vegetationInput: HTMLInputElement;
   readonly countyInput: HTMLInputElement;
   readonly vegetationSummary: HTMLElement;
   readonly countySummary: HTMLElement;
   readonly convertCountyButton: HTMLButtonElement;
+  readonly convertVegetationButton: HTMLButtonElement;
   readonly exportRuntimeButton: HTMLButtonElement;
+  readonly exportRuntimeV2Button: HTMLButtonElement;
   readonly exportTerrainButton: HTMLButtonElement;
   readonly exportVegetationButton: HTMLButtonElement;
   readonly dialog: HTMLDialogElement;
@@ -37,6 +41,7 @@ export interface EditorElements {
   readonly layerHedgerows: HTMLInputElement;
   readonly layerPrefabs: HTMLInputElement;
   readonly layerTerrainPads: HTMLInputElement;
+  readonly layerNativeVegetation: HTMLInputElement;
   readonly layerVegetationReference: HTMLInputElement;
   readonly layerCountySettlements: HTMLInputElement;
   readonly layerCountyRoads: HTMLInputElement;
@@ -128,50 +133,66 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
             ${toolButton("prefab", "⌂", "Place prefab")}
             <p id="asset-summary" class="asset-summary">Load the shared catalogue to enable proxy placement.</p>
           </section>
+          <section class="panel-section vegetation-section">
+            <div class="section-heading"><span>03</span><h2>Native vegetation</h2></div>
+            <label class="field-label compact-label" for="vegetation-type-select">Placement type</label>
+            <select id="vegetation-type-select" class="asset-select">
+              <option value="forest_tree">Forest tree</option>
+              <option value="scattered_tree">Scattered tree</option>
+              <option value="shrub">Shrub</option>
+            </select>
+            <label class="field-label compact-label" for="vegetation-asset-id">Logical species / asset ID</label>
+            <input id="vegetation-asset-id" type="text" value="oak" spellcheck="false" />
+            ${toolButton("vegetation", "♣", "Place vegetation")}
+            <p class="asset-summary">Editable UUID records use chunked GPU batches; height is derived from working terrain.</p>
+          </section>
           <section class="panel-section layers-section">
-            <div class="section-heading"><span>03</span><h2>Terrain layers</h2></div>
+            <div class="section-heading"><span>04</span><h2>Terrain layers</h2></div>
             ${layerToggle("layer-terrain", "Terrain colour", "Elevation palette", "terrain-swatch")}
             ${layerToggle("layer-hillshade", "Hillshade", "Northwest lighting", "hillshade-swatch")}
             ${layerToggle("layer-contours", "Contours", "Adaptive metre interval", "contour-swatch")}
           </section>
           <section class="panel-section layers-section">
-            <div class="section-heading"><span>04</span><h2>Authored layers</h2></div>
+            <div class="section-heading"><span>05</span><h2>Authored layers</h2></div>
             ${layerToggle("layer-places", "Place regions", "Town, village, farm, military", "places-swatch")}
             ${layerToggle("layer-land-use", "Land use", "Pasture, grazing, woodland", "land-use-swatch")}
             ${layerToggle("layer-roads", "Native roads", "World-width geometry", "roads-swatch")}
             ${layerToggle("layer-hedgerows", "Hedgerows", "Editable control lines", "hedgerows-swatch")}
             ${layerToggle("layer-prefabs", "Prefabs", "Catalogue proxy footprints", "prefabs-swatch")}
             ${layerToggle("layer-terrain-pads", "Terrain pads", "Core and blend extents", "pads-swatch")}
+            ${layerToggle("layer-native-vegetation", "Native vegetation", "Editable chunked GPU symbols", "native-vegetation-swatch")}
           </section>
           <section class="panel-section reference-section">
-            <div class="section-heading"><span>05</span><h2>Reference sources</h2></div>
+            <div class="section-heading"><span>06</span><h2>Reference sources</h2></div>
             <label class="compact-file" for="vegetation-reference-file"><strong>Vegetation v1</strong><input id="vegetation-reference-file" type="file" accept=".json,application/json" /></label>
             <p id="vegetation-summary" class="asset-summary">No imported vegetation reference.</p>
+            <button id="convert-vegetation" class="button" type="button" disabled>Convert vegetation to editable</button>
             <label class="compact-file" for="county-reference-file"><strong>County features v3</strong><input id="county-reference-file" type="file" accept=".json,application/json" /></label>
             <p id="county-summary" class="asset-summary">No county reference.</p>
             <button id="convert-county" class="button" type="button" disabled>Convert county to native</button>
           </section>
           <section class="panel-section layers-section">
-            <div class="section-heading"><span>06</span><h2>Reference layers</h2></div>
+            <div class="section-heading"><span>07</span><h2>Reference layers</h2></div>
             ${layerToggle("layer-vegetation-reference", "Imported vegetation", "Single GPU points batch", "vegetation-swatch")}
             ${layerToggle("layer-county-settlements", "County settlements", "Dashed reference regions", "county-settlements-swatch")}
             ${layerToggle("layer-county-roads", "County roads", "Dashed reference lines", "county-roads-swatch")}
             ${layerToggle("layer-county-buildings", "County buildings", "Source footprint outlines", "county-buildings-swatch")}
           </section>
           <section class="panel-section export-section">
-            <div class="section-heading"><span>07</span><h2>Exports</h2></div>
-            <button id="export-runtime" class="button" type="button" disabled>Runtime scenery v2</button>
+            <div class="section-heading"><span>08</span><h2>Exports</h2></div>
+            <button id="export-runtime" class="button" type="button" disabled>Runtime scenery v3</button>
+            <button id="export-runtime-v2" class="button" type="button" disabled>Legacy runtime scenery v2</button>
             <button id="export-terrain" class="button" type="button" disabled>Final terrain PNG + JSON</button>
             <button id="export-vegetation" class="button" type="button" disabled>Resampled vegetation v1</button>
           </section>
           <section class="panel-section navigation-help">
-            <div class="section-heading"><span>08</span><h2>Shortcuts</h2></div>
+            <div class="section-heading"><span>09</span><h2>Shortcuts</h2></div>
             <dl>
               <div><dt>Finish / cancel</dt><dd><kbd>Enter</kbd> / <kbd>Esc</kbd></dd></div>
               <div><dt>Draft point</dt><dd><kbd>Backspace</kbd></dd></div>
               <div><dt>Delete</dt><dd><kbd>Delete</kbd></dd></div>
               <div><dt>Vertex delete</dt><dd><kbd>Shift Delete</kbd></dd></div>
-              <div><dt>Rotate prefab</dt><dd><kbd>Q</kbd> / <kbd>E</kbd></dd></div>
+              <div><dt>Rotate object</dt><dd><kbd>Q</kbd> / <kbd>E</kbd></dd></div>
               <div><dt>Pan</dt><dd>Middle/right drag</dd></div>
             </dl>
           </section>
@@ -218,7 +239,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         <div class="status-metric"><span>X / Z</span><strong id="status-coordinates">—</strong></div>
         <div class="status-metric"><span>ELEVATION</span><strong id="status-elevation">—</strong></div>
         <div class="status-metric"><span>SLOPE</span><strong id="status-slope">—</strong></div>
-        <div class="status-build">MILESTONES 0–4</div>
+        <div class="status-build">MILESTONES 0–5</div>
       </footer>
     </main>
 
@@ -302,12 +323,16 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     assetCatalogInput: byId("asset-catalog-file", HTMLInputElement),
     assetSelect: byId("asset-select", HTMLSelectElement),
     assetSummary: byId("asset-summary", HTMLElement),
+    vegetationTypeSelect: byId("vegetation-type-select", HTMLSelectElement),
+    vegetationAssetId: byId("vegetation-asset-id", HTMLInputElement),
     vegetationInput: byId("vegetation-reference-file", HTMLInputElement),
     countyInput: byId("county-reference-file", HTMLInputElement),
     vegetationSummary: byId("vegetation-summary", HTMLElement),
     countySummary: byId("county-summary", HTMLElement),
     convertCountyButton: byId("convert-county", HTMLButtonElement),
+    convertVegetationButton: byId("convert-vegetation", HTMLButtonElement),
     exportRuntimeButton: byId("export-runtime", HTMLButtonElement),
+    exportRuntimeV2Button: byId("export-runtime-v2", HTMLButtonElement),
     exportTerrainButton: byId("export-terrain", HTMLButtonElement),
     exportVegetationButton: byId("export-vegetation", HTMLButtonElement),
     dialog: byId("new-project-dialog", HTMLDialogElement),
@@ -328,6 +353,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     layerHedgerows: byId("layer-hedgerows", HTMLInputElement),
     layerPrefabs: byId("layer-prefabs", HTMLInputElement),
     layerTerrainPads: byId("layer-terrain-pads", HTMLInputElement),
+    layerNativeVegetation: byId("layer-native-vegetation", HTMLInputElement),
     layerVegetationReference: byId("layer-vegetation-reference", HTMLInputElement),
     layerCountySettlements: byId("layer-county-settlements", HTMLInputElement),
     layerCountyRoads: byId("layer-county-roads", HTMLInputElement),

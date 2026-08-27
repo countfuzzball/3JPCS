@@ -5,8 +5,9 @@ This repository now contains two deliberately separate implementations:
 - the preserved Python/Tkinter v0.2 prototype, which remains the behavioural and
   interchange-contract reference; and
 - the browser-based Vite/TypeScript/Three.js rewrite, currently implemented through
-  Milestone 4 (application shell, terrain/native geometry/prefab authoring, browser
-  persistence and relinking, reference layers, and legacy-compatible exports).
+  Milestone 5 (application shell, terrain/native geometry/prefab/vegetation authoring,
+  browser persistence and relinking, reference layers, versioned exports, and the full
+  seeded performance benchmark).
 
 See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
 its verified commands, architecture, browser file limitations, and milestone status.
@@ -56,6 +57,8 @@ both editor and viewer; it is not duplicated into runtime scenery.
 - `Ctrl`-click a selected road or hedgerow segment to insert a point.
 - `Delete` deletes an object; `Shift+Delete` deletes a selected vertex where valid.
 - `Q`/`E` rotate a selected prefab by 15 degrees.
+- Native vegetation uses the same select/drag/delete/lock workflow. Choose a vegetation
+  type and logical species/asset ID, then use **Place vegetation**; `Q`/`E` rotates it.
 - A prefab's Properties panel controls terrain-pad enabled state, width, depth, and
   blend distance, or resets them to a disabled placement default.
 
@@ -84,9 +87,11 @@ only resamples its final `terrain_y_m`.
   importer-facing heightmap metadata contract.
 - **Export Resampled Vegetation** writes vegetation schema v1 with unchanged X/Z,
   type, species, rotation, scale, and region identity, plus fresh working-terrain Y.
-- **Export Runtime Scenery** writes runtime scenery v2. Prefabs contain logical
-  `asset_id`, transform, visibility, and derived working-terrain Y. No catalogue path,
-  GLB path, or renderer-specific field is exported.
+- **Export Runtime Scenery v3** writes prefabs and native vegetation with logical
+  `asset_id`, transform, visibility, asset status, and derived working-terrain Y. A
+  separate legacy-v2 action requires explicit confirmation before omitting nonempty
+  native vegetation. No catalogue path, GLB path, lock, pad, or renderer state is
+  exported.
 
 GLBs are expected to be authoring-correct: metres, Y up, local -Z forward, scale 1.0,
 and a ground-ready pivot. Fix a nonconforming asset itself; neither editor nor viewer

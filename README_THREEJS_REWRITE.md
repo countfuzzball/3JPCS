@@ -1,6 +1,6 @@
 # Polygon County Scenery Editor — Three.js rewrite
 
-This is a genuine static browser rewrite, implemented through **Milestone 4**. The
+This is a genuine static browser rewrite, implemented through **Milestone 5**. The
 Python/Tkinter application remains checked in beside it as the behavioural and
 data-contract reference.
 
@@ -31,8 +31,12 @@ as “loading module disallowed due to a disallowed MIME type (`text/html`)” a
 the host returned its HTML fallback for a missing JavaScript asset. Rebuild and
 publish the complete `dist/` directory rather than `index.html` by itself.
 
-`npm run benchmark` currently reports that the full Polygon County performance
-benchmark is deferred to Milestone 5. It does not fabricate performance results.
+`npm run benchmark` first builds the production bundle, launches that bundle in a
+1920×1080 Chromium page, runs the exact seeded Polygon County workload, prints the
+measurements, and writes `benchmark-results/milestone-5-latest.json`. It never samples
+or lowers the 32,498 native vegetation count. See
+[`docs/MILESTONE_5_BENCHMARK.md`](docs/MILESTONE_5_BENCHMARK.md) for the recorded
+environment, results, target misses, and bottleneck analysis.
 
 The Vite production output in `dist/` is static. It needs no backend and makes no
 network requests for terrain or project data. Its asset URLs are relative, so the
@@ -129,11 +133,34 @@ Milestone 4 provides:
   unversioned heightmap metadata contract and explicit little-endian float32 working-
   terrain SHA-256.
 
-Native vegetation creation/conversion/editing and runtime scenery v3, actual GLB
-loading, and the full workload benchmark belong to Milestone 5 or later. Imported
-vegetation is intentionally a non-editable dense reference in Milestone 4.
+Milestone 5 provides:
 
-The current verification baseline is 99 Vitest tests, 4 Playwright milestone flows,
+- explicit creation of native forest-tree, scattered-tree, and shrub records with
+  UUID identity, logical asset/species IDs, visibility/lock state, derived terrain Y,
+  property editing, select/drag/rotate/scale/delete, and a separate layer toggle;
+- an explicit, one-transaction conversion of immutable vegetation-v1 references into
+  native records, preserving source placement fields and deterministically skipping
+  exact placement duplicates on repeat conversion;
+- a dedicated vegetation render-data manager using 512 m spatial chunks and
+  asset/type batches, stable ID↔slot maps, swap-remove, cross-chunk re-batching,
+  per-slot dirty buffer ranges, spatially bounded CPU picking, and transient selection
+  overlays—never one Three.js object per placement;
+- all-native terrain-height refresh after a committed terrain-pad change while
+  ordinary single-record edits leave the other vegetation slots untouched;
+- strict runtime scenery v3 export with native vegetation and derived float32 working-
+  terrain Y, while legacy v2 remains a separately labelled, explicitly lossy action;
+- bulk delta history that holds the converted records rather than whole-project
+  snapshots and removes/restores the collection in linear time; and
+- a deterministic benchmark containing 309 roads, 279 prefabs, 4,870 trees, and
+  27,628 shrubs, with production-browser measurements for construction, interactivity,
+  frame times, draws/Object3Ds, dense/sparse picks, within/cross-chunk moves, terrain-Y
+  refresh, serialization, and available memory/resource counters.
+
+Imported vegetation remains immutable until the user deliberately converts it. A
+woodland polygon remains a semantic region and is never interpreted as thousands of
+tree records.
+
+The current verification baseline is 107 Vitest tests, 5 Playwright milestone flows,
 and all 45 Python reference tests.
 
 ## Source-of-truth priority
@@ -174,8 +201,9 @@ src/model/        entities, strict DTO migration, validation, coordinate transfo
 src/history/      delta-based commands and undo/redo
 src/io/           browser persistence/relinks, narrow NPY parser, and strict exports
 src/terrain/      immutable base, derived float32 working terrain, NW–SE queries
-src/rendering/    Three.js controller and disposable terrain/entity projections
+src/rendering/    Three.js controller, disposable projections, vegetation GPU batches
 src/interaction/  navigation, layer-aware picking, and constrained geometry editing
+src/benchmark/    exact-count deterministic Polygon County performance scene
 src/ui/           semantic DOM layout
 src/schemas/      explicitly versioned contract snapshots
 tests/            unit, golden fixture, and focused browser coverage

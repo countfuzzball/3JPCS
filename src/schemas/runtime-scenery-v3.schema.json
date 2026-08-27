@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polygon-county.invalid/runtime-scenery-v3.schema.json",
+  "title": "Polygon County Runtime Scenery v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema_version", "coordinate_system", "world", "terrain_float32_sha256", "place_regions", "land_use_regions", "roads", "hedgerows", "prefab_instances", "vegetation_instances"],
+  "properties": {
+    "format": {"const": "polygon-county-runtime-scenery"},
+    "schema_version": {"const": 3},
+    "coordinate_system": {"const": "X east/right, terrain Y elevation, Z south/down; metres"},
+    "world": {
+      "type": "object", "additionalProperties": false,
+      "required": ["width_m", "depth_m", "terrain_spacing_m"],
+      "properties": {
+        "width_m": {"type": "number", "exclusiveMinimum": 0},
+        "depth_m": {"type": "number", "exclusiveMinimum": 0},
+        "terrain_spacing_m": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "terrain_float32_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "place_regions": {"type": "array", "items": {"$ref": "#/$defs/place"}},
+    "land_use_regions": {"type": "array", "items": {"$ref": "#/$defs/landUse"}},
+    "roads": {"type": "array", "items": {"$ref": "#/$defs/road"}},
+    "hedgerows": {"type": "array", "items": {"$ref": "#/$defs/hedgerow"}},
+    "prefab_instances": {"type": "array", "items": {"$ref": "#/$defs/prefab"}},
+    "vegetation_instances": {"type": "array", "items": {"$ref": "#/$defs/vegetation"}}
+  },
+  "$defs": {
+    "point": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "items": false},
+    "place": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "place_type", "points", "visible"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "place_type": {"enum": ["town", "village", "farm", "military_area"]},
+        "points": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/point"}},
+        "visible": {"type": "boolean"}
+      }
+    },
+    "landUse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "land_use_type", "points", "visible"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "land_use_type": {"enum": ["pasture", "rough_grazing", "woodland"]},
+        "points": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/point"}},
+        "visible": {"type": "boolean"}
+      }
+    },
+    "road": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "points", "width_m", "road_class", "surface", "elevation_mode", "visible"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "points": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/point"}},
+        "width_m": {"type": "number", "exclusiveMinimum": 0},
+        "road_class": {"enum": ["county_road", "local_road", "lane", "farm_track", "military_road"]},
+        "surface": {"enum": ["paved", "gravel", "dirt"]},
+        "elevation_mode": {"const": "follow_terrain"}, "visible": {"type": "boolean"}
+      }
+    },
+    "hedgerow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "points", "nominal_width_m", "nominal_height_m", "visible"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "points": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/point"}},
+        "nominal_width_m": {"type": "number", "exclusiveMinimum": 0},
+        "nominal_height_m": {"type": "number", "exclusiveMinimum": 0},
+        "visible": {"type": "boolean"}
+      }
+    },
+    "prefab": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "visible", "asset_id", "category", "x_m", "z_m", "terrain_y_m", "rotation_deg", "scale", "frontage_road_id", "asset_status"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1},
+        "visible": {"type": "boolean"}, "asset_id": {"type": "string", "minLength": 1},
+        "category": {"type": "string", "minLength": 1},
+        "x_m": {"type": "number"}, "z_m": {"type": "number"}, "terrain_y_m": {"type": "number"},
+        "rotation_deg": {"type": "number", "minimum": 0, "exclusiveMaximum": 360},
+        "scale": {"type": "number", "exclusiveMinimum": 0},
+        "frontage_road_id": {"type": ["string", "null"], "format": "uuid"},
+        "asset_status": {"enum": ["resolved", "missing"]}
+      }
+    },
+    "vegetation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "visible", "vegetation_type", "asset_id", "x_m", "z_m", "terrain_y_m", "rotation_deg", "scale", "source_region_id", "asset_status"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "name": {"type": "string", "minLength": 1},
+        "visible": {"type": "boolean"},
+        "vegetation_type": {"enum": ["forest_tree", "scattered_tree", "shrub"]},
+        "asset_id": {"type": "string", "minLength": 1},
+        "x_m": {"type": "number"}, "z_m": {"type": "number"}, "terrain_y_m": {"type": "number"},
+        "rotation_deg": {"type": "number", "minimum": 0, "exclusiveMaximum": 360},
+        "scale": {"type": "number", "exclusiveMinimum": 0},
+        "source_region_id": {"type": ["string", "null"], "format": "uuid"},
+        "asset_status": {"enum": ["resolved", "missing"]}
+      }
+    }
+  }
+}
