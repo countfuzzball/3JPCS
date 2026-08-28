@@ -1,25 +1,21 @@
 # Polygon County Scenery Editor runtime exports: importer/consumer guide
 
 This document is a self-contained, importer-facing description of the runtime exports
-produced by Polygon County Scenery Editor v0.2. It is intended for implementing a
+produced by Polygon County Scenery Editor v0.5. It is intended for implementing a
 terrain viewer, Godot/Unity/Three.js importer, conversion tool, or validation pipeline
 without reading the editable `.scenery.json` project format.
 
-> **Browser rewrite addendum (v0.5 / Milestone 5):** the Three.js editor now defaults
-> to strict runtime scenery v3, which is the v2 document described below plus required
-> native `vegetation_instances`. Each native record contains ID/name/visibility,
-> vegetation type, logical asset ID, X/Z, working-terrain Y, normalized yaw, scale,
-> nullable source-region UUID, and resolved/missing asset status. It omits locks and
-> terrain pads. The original v2 contract below remains available as an explicitly
-> labelled legacy export and cannot silently omit a nonempty native collection. See
-> `src/schemas/runtime-scenery-v3.schema.json` and `docs/SCENERY_FORMATS.md` for the
-> current browser contract. The remainder of this guide deliberately preserves the
-> Python v0.2/v2 consumer contract.
+Runtime scenery v3 is the current viewer contract. It includes semantic scenery,
+prefab placements, and the editor's native vegetation placements in one document.
+Runtime scenery v2 remains an explicitly labelled legacy export. Resampled vegetation
+v1 is a separate companion export for the immutable imported vegetation reference; it
+is still needed when those records have not been converted to native vegetation.
 
 This guide adapts the Terrain Editor runtime importer contract. Terrain image encoding,
 coordinates, grid layout, and triangle sampling remain compatible. The Scenery Editor
-adds composed terrain pads, resampled vegetation, and its own semantic runtime-scenery
-JSON. It does not export the Terrain Editor's `county_features.json` contract.
+adds composed terrain pads, native vegetation, resampled imported vegetation, and its
+own semantic runtime-scenery JSON. It does not export the Terrain Editor's
+`county_features.json` contract.
 
 ## Contract summary
 
@@ -28,10 +24,11 @@ document_role: importer-facing Scenery Editor export specification
 editable_project_schema: not covered here
 heightmap_png: unsigned 16-bit single-channel greyscale
 heightmap_metadata_json: unversioned, paired to PNG by filename stem
-vegetation_json_schema_version: 1
+resampled_imported_vegetation_schema_version: 1
 runtime_scenery_format: polygon-county-runtime-scenery
-runtime_scenery_schema_version: 2
-complete_bundle_command: none in v0.2; export the three products independently
+runtime_scenery_schema_version: 3
+legacy_runtime_scenery_schema_version: 2
+complete_bundle_command: none in v0.5; export the products independently
 runtime_asset_resolution: viewer-owned asset manifest keyed by asset_id
 units: metres
 origin: northwest / top-left of the world
@@ -41,44 +38,50 @@ terrain_cell_diagonal: northwest to southeast
 
 Normative implementation and schema files in this repository are:
 
-- [`scenery_editor/project_io/final_export.py`](../scenery_editor/project_io/final_export.py)
-- [`scenery_editor/project_io/runtime_export.py`](../scenery_editor/project_io/runtime_export.py)
-- [`scenery_editor/model/working_terrain.py`](../scenery_editor/model/working_terrain.py)
-- [`schemas/runtime_scenery.schema.json`](../schemas/runtime_scenery.schema.json)
+- [`src/io/finalExport.ts`](../src/io/finalExport.ts)
+- [`src/io/runtimeExport.ts`](../src/io/runtimeExport.ts)
+- [`src/terrain/WorkingTerrain.ts`](../src/terrain/WorkingTerrain.ts)
+- [`src/schemas/runtime-scenery-v3.schema.json`](../src/schemas/runtime-scenery-v3.schema.json)
+- [`src/schemas/asset-catalog-v3.schema.json`](../src/schemas/asset-catalog-v3.schema.json)
+
+The frozen v2 compatibility contract is
+[`src/schemas/runtime-scenery-v2.schema.json`](../src/schemas/runtime-scenery-v2.schema.json).
 
 The words **MUST**, **SHOULD**, and **MAY** below describe importer behavior.
 
 ## 1. Exported files
 
-The Scenery Editor currently exposes three independent export commands:
+The Scenery Editor currently exposes four independent export commands:
 
-| Export | Suggested filename | Identification | Current version |
+| Export | Browser download filename | Identification | Current version |
 | --- | --- | --- | --- |
-| Final terrain | `terrain_heightmap.png` | User-selected PNG | PNG format; no application schema version |
-| Terrain metadata | `terrain_heightmap.json` | Same directory and stem as the PNG | Unversioned required-field contract |
-| Resampled vegetation | `generated_vegetation.json` | User-selected JSON | `schema_version == 1` |
-| Runtime scenery | `runtime_scenery.json` | User-selected JSON | Fixed format plus `schema_version == 2` |
+| Final terrain | `<project>.final-heightmap.png` | Downloaded PNG | PNG format; no application schema version |
+| Terrain metadata | `<project>.final-heightmap.json` | Same stem as the PNG | Unversioned required-field contract |
+| Runtime scenery | `<project>.runtime-scenery-v3.json` | Downloaded JSON | Fixed format plus `schema_version == 3` |
+| Legacy runtime scenery | `<project>.runtime-scenery-v2.json` | Downloaded JSON | Fixed format plus `schema_version == 2` |
+| Resampled imported vegetation | `<project>.resampled-vegetation-v1.json` | Downloaded JSON | `schema_version == 1` |
 
 The commands are:
 
-- **File → Export Final Terrain PNG + Metadata…**
-- **File → Export Resampled Vegetation…**
-- **File → Export Runtime Scenery…**
+- **Runtime scenery v3**
+- **Legacy runtime scenery v2**
+- **Final terrain PNG + JSON**
+- **Resampled vegetation v1**
 
-Exporting `name.png` always writes `name.json` beside it. Vegetation and runtime
-scenery filenames are conventions only; neither document embeds its own filename.
+Final-terrain export triggers matching `.png` and `.json` downloads with the same stem.
+The runtime and vegetation documents do not embed their download filenames.
 
-There is no combined bundle command or bundle manifest in v0.2. Before each export,
-the application recomposes the working terrain from the unchanged imported base
-terrain and the current prefab terrain pads. If all three commands are run from the
-same unchanged scenery-project state, their terrain-derived values describe the same
-float32 surface.
+There is no combined bundle command or bundle manifest in v0.5. Each export reads the
+current working terrain, which the editor keeps composed from the unchanged imported
+base terrain and current prefab terrain pads. If the applicable exports are run from
+the same unchanged scenery-project state, their terrain-derived values describe the
+same float32 surface.
 
 Cross-file identity limitations:
 
 - heightmap metadata contains no project identity, batch ID, or terrain hash;
-- vegetation retains the `project_id` and `project_name` of its imported vegetation
-  source;
+- the resampled imported-vegetation export retains the `project_id` and
+  `project_name` of its imported vegetation source;
 - runtime scenery contains no project ID or project name;
 - runtime scenery includes a hash of the pre-quantized float32 terrain grid, but the
   PNG does not contain that hash;
@@ -95,19 +98,31 @@ The intended runtime separation is:
 final heightmap PNG + metadata
     authoritative runtime terrain surface
 
-runtime scenery JSON
-    semantic roads, hedgerows, regions, and prefab placements
+runtime scenery v3 JSON
+    semantic roads, hedgerows, regions, prefab placements, and native vegetation
 
-resampled vegetation JSON
-    already generated vegetation placements with final-terrain Y
+resampled vegetation v1 JSON (optional companion file)
+    immutable imported-reference placements with final-terrain Y
 
 viewer-owned asset manifest
-    asset_id/model_or_species -> engine resource and model-specific corrections
+    asset_id -> engine resource
 ```
+
+Typical viewer-side bundles are:
+
+- native-only: final heightmap PNG + metadata, runtime scenery v3, asset catalogue,
+  and referenced asset resources;
+- native plus retained imported vegetation: the native-only bundle plus resampled
+  vegetation v1; or
+- legacy: final heightmap PNG + metadata, runtime scenery v2, optional resampled
+  vegetation v1, and the corresponding asset resources.
 
 The viewer does not need the editable scenery project or source float32 NPY, and no
 asset path is embedded in runtime scenery. It consumes the shared asset catalogue (or
-an equivalent viewer-owned manifest) separately.
+an equivalent viewer-owned manifest) separately. A viewer should consume native
+vegetation from runtime scenery v3 and, when the exported project still relies on its
+immutable imported vegetation reference, consume resampled vegetation v1 as a separate
+placement source. The editor does not merge that reference into runtime v3 implicitly.
 
 The final heightmap already contains the effect of terrain pads. A consumer **MUST NOT**
 apply terrain pads a second time. Terrain-pad width, depth, blend, target mode, and
@@ -268,7 +283,8 @@ span  = h_max - h_min
 The exporter encodes metres as:
 
 ```text
-q = round(clamp((height_m - h_min) / span, 0, 1) * 65535)
+q = round_to_nearest_ties_to_even(
+      clamp((height_m - h_min) / span, 0, 1) * 65535)
 ```
 
 The importer decodes metres as:
@@ -298,8 +314,8 @@ Projects may use other endpoints, so importers **MUST** compute this from metada
 ## 6. Heightmap metadata JSON
 
 The metadata is UTF-8 JSON beside the PNG with the same filename stem. It has no
-`schema_version`, project identity, filename, or terrain hash. Its complete v0.2 shape
-is:
+`schema_version`, project identity, filename, or terrain hash. Its complete current
+shape is:
 
 ```json
 {
@@ -357,11 +373,24 @@ lowland_reference_elevation_m <= maximum_elevation_m
 maximum_elevation_m > minimum_elevation_m
 ```
 
-## 7. Resampled vegetation JSON
+## 7. Resampled imported vegetation JSON
 
 Resampled vegetation preserves the imported Terrain Editor vegetation schema v1. It
 contains generated runtime placements, not source forest/scatter polygons, species
 weights, exclusion polygons, or regeneration settings.
+
+This file represents the separately loaded, immutable vegetation reference only. It
+does not contain native editable vegetation from the scenery project, and the exporter
+does not merge the two collections. Use `vegetation_instances` in runtime scenery v3
+for native records and this file for imported records that remain external to the
+editable project.
+
+Conversion of an imported reference to native vegetation does not delete or mutate the
+reference. Consequently, the two exports can contain equivalent placements after a
+conversion. Neither format includes a conversion-completeness flag or a cross-file
+deduplication manifest. A bundle producer must decide whether the viewer should load
+the reference file alongside v3; an importer **MUST NOT** assume that both should always
+be combined.
 
 Top-level shape:
 
@@ -421,14 +450,14 @@ feature and must not be inferred from terrain padding.
 does not declare a model forward axis, pivot, pitch/roll convention, or engine resource.
 Those corrections belong in the viewer's asset registry.
 
-## 8. Runtime scenery JSON v2
+## 8. Runtime scenery JSON v3
 
 Runtime scenery is a separate format from Terrain Editor `county_features.json` and
 from the editable Scenery Editor project. Importers **MUST** require both:
 
 ```text
 format == "polygon-county-runtime-scenery"
-schema_version == 2
+schema_version == 3
 ```
 
 A representative complete document is:
@@ -436,7 +465,7 @@ A representative complete document is:
 ```json
 {
   "format": "polygon-county-runtime-scenery",
-  "schema_version": 2,
+  "schema_version": 3,
   "coordinate_system": "X east/right, terrain Y elevation, Z south/down; metres",
   "world": {
     "width_m": 6000.0,
@@ -499,6 +528,22 @@ A representative complete document is:
       "frontage_road_id": "33333333-3333-4333-8333-333333333333",
       "asset_status": "resolved"
     }
+  ],
+  "vegetation_instances": [
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "name": "Oak 001",
+      "visible": true,
+      "vegetation_type": "forest_tree",
+      "asset_id": "oak_mature_01",
+      "x_m": 720.0,
+      "z_m": 810.0,
+      "terrain_y_m": 44.15,
+      "rotation_deg": 217.5,
+      "scale": 1.04,
+      "source_region_id": "77777777-7777-4777-8777-777777777777",
+      "asset_status": "resolved"
+    }
   ]
 }
 ```
@@ -508,7 +553,7 @@ A representative complete document is:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `format` | fixed string | Runtime-scenery discriminator. |
-| `schema_version` | integer | Must equal `2`. |
+| `schema_version` | integer | Must equal `3`. |
 | `coordinate_system` | fixed string | Shared X/Y/Z declaration. |
 | `world` | object | World dimensions and terrain spacing. |
 | `terrain_float32_sha256` | 64 lowercase hex characters | Hash of the pre-PNG working grid; see section 10. |
@@ -517,6 +562,10 @@ A representative complete document is:
 | `roads` | array | Semantic terrain-following road centrelines. |
 | `hedgerows` | array | Semantic terrain-following linear features. |
 | `prefab_instances` | array | Logical object placements with final-terrain origin Y. |
+| `vegetation_instances` | array | Native vegetation placements with final-terrain origin Y. |
+
+Every listed top-level field and array is required, including an empty
+`vegetation_instances` array. The v3 schema rejects unknown top-level and record fields.
 
 `world` has exactly the following current exporter fields:
 
@@ -699,7 +748,59 @@ successfully after loading a catalogue. Conversely, `resolved` does not guarante
 consumer can load the resource. Importers should report their own missing-resource
 entries independently.
 
-### 8.7 Visibility and IDs
+### 8.7 Native vegetation instances
+
+Each native vegetation instance has:
+
+```json
+{
+  "id": "66666666-6666-4666-8666-666666666666",
+  "name": "Oak 001",
+  "visible": true,
+  "vegetation_type": "forest_tree",
+  "asset_id": "oak_mature_01",
+  "x_m": 720.0,
+  "z_m": 810.0,
+  "terrain_y_m": 44.15,
+  "rotation_deg": 217.5,
+  "scale": 1.04,
+  "source_region_id": "77777777-7777-4777-8777-777777777777",
+  "asset_status": "resolved"
+}
+```
+
+Field semantics:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | UUID string | Stable vegetation-instance identity. |
+| `name` | non-empty string | Human-readable editor name. |
+| `visible` | boolean | Whether the instance should normally render. |
+| `vegetation_type` | enum string | `forest_tree`, `scattered_tree`, or `shrub`. |
+| `asset_id` | non-empty string | Logical shared-catalogue lookup key. |
+| `x_m`, `z_m` | finite numbers | World origin in the horizontal plane. |
+| `terrain_y_m` | finite number | Unoffset pre-PNG working-terrain height at the origin. |
+| `rotation_deg` | finite number | Normalized yaw in `[0, 360)`. |
+| `scale` | finite number > 0 | Uniform instance scale. |
+| `source_region_id` | UUID string or null | Optional provenance for an external generation region. |
+| `asset_status` | `resolved` or `missing` | Whether the editor's loaded asset catalogue contained the key at export. |
+
+Place the logical vegetation origin at `(x_m, terrain_y_m, z_m)` and apply the same yaw
+convention and X/Z transform described for prefabs. `source_region_id` is provenance;
+it is not required to resolve to one of the runtime document's place or land-use
+regions. Native vegetation contains no editor lock, terrain pad, model path, source
+file path, or renderer/LOD state.
+
+`vegetation_instances` is a concrete placement list. It is distinct from a
+`land_use_type: "woodland"` polygon: woodland is semantic area geometry and does not
+implicitly create, replace, or own vegetation placements. Consumers should choose an
+instancing, batching, tiling, LOD, and streaming strategy appropriate to the number of
+records while preserving the exported placement semantics.
+
+The `asset_status` caveat in section 8.6 applies equally to vegetation. Resolve native
+vegetation through the same `asset_id` catalogue used for prefabs.
+
+### 8.8 Visibility and IDs
 
 Runtime export retains hidden authored objects with `visible: false`. Consumers
 **MUST NOT** assume every record should render. Retaining hidden records preserves UUID
@@ -707,6 +808,19 @@ relationships such as `frontage_road_id`.
 
 Editor-only `locked` state is absent. UUIDs are unique across all authored Scenery
 Editor object collections at export time.
+
+### 8.9 Legacy runtime scenery v2
+
+Runtime scenery v2 has the same discriminator and common arrays described above, but
+uses `schema_version == 2` and has no `vegetation_instances` field. It is available only
+through the explicitly labelled **Legacy runtime scenery v2** export.
+
+The normal v2 exporter refuses to omit a nonempty native vegetation collection. The UI
+requires explicit confirmation before producing a lossy v2 file without those records.
+New importers should not infer an empty vegetation collection from a v2 document; v2
+simply has no native-vegetation contract. Validate it against
+[`runtime-scenery-v2.schema.json`](../src/schemas/runtime-scenery-v2.schema.json) through
+an explicit compatibility path rather than treating it as v3.
 
 ## 9. Shared asset catalogue v3
 
@@ -725,6 +839,10 @@ The editor and viewer consume one manually maintained engine-neutral catalogue:
     "house_2storey_01": {
       "category": "house",
       "resource": "buildings/house_2storey_01.glb"
+    },
+    "oak_mature_01": {
+      "category": "vegetation",
+      "resource": "vegetation/oak_mature_01.glb"
     }
   }
 }
@@ -736,7 +854,9 @@ XYZ, applies the exported heading and optional instance scale, and stops. Old ya
 pivot, base-scale, and per-asset footprint corrections are not accepted. Do not put
 catalogue paths or resources into runtime scenery JSON.
 
-Vegetation `model_or_species` should be resolved through a similar viewer-owned table.
+Native vegetation uses the same catalogue `asset_id` lookup as prefabs. The separate
+resampled vegetation v1 file instead calls this logical key `model_or_species`; its
+importer may adapt that field to the same viewer registry.
 
 ## 10. Cross-file relationships, hashes, and precision
 
@@ -745,9 +865,11 @@ When exports come from the same unchanged scenery state:
 - runtime `world.width_m` equals metadata `world_width_m`;
 - runtime `world.depth_m` equals metadata `world_depth_m`;
 - runtime `world.terrain_spacing_m` equals metadata `terrain_spacing_m`;
-- vegetation and prefab `terrain_y_m` agree with NW-SE triangle interpolation of the
-  final float32 working terrain before PNG quantization;
-- every runtime road and hedgerow derives its runtime Y from the same final terrain;
+- native vegetation, resampled imported vegetation, and prefab `terrain_y_m` agree with
+  NW-SE triangle interpolation of the final float32 working terrain before PNG
+  quantization;
+- viewer-generated road and hedgerow geometry should derive its Y from that same final
+  terrain;
 - terrain pads are already represented in the final heightmap and all sampled Y values.
 
 ### 10.1 Float32 terrain hash
@@ -755,7 +877,8 @@ When exports come from the same unchanged scenery state:
 `terrain_float32_sha256` is computed as:
 
 ```text
-SHA-256(row-major C-order bytes of the final float32 elevation array)
+SHA-256(row-major C-order little-endian IEEE-754 binary32 bytes of the final
+        float32 elevation array)
 ```
 
 It is **not**:
@@ -793,8 +916,9 @@ prefab expected_y     = triangle_height_at(x_m, z_m)
 road/hedge runtime_y  = triangle_height_at(any tessellated x_m, z_m)
 ```
 
-The vegetation `project_id` cannot currently be compared with runtime scenery because
-runtime scenery v2 has no project ID. Association is therefore user/bundle managed.
+The resampled imported-vegetation export's `project_id` cannot currently be
+compared with runtime scenery because runtime scenery v3 has no project ID. Association
+between independently exported files is therefore user/bundle managed.
 
 ## 11. Recommended importer algorithm
 
@@ -804,20 +928,25 @@ runtime scenery v2 has no project ID. Association is therefore user/bundle manag
 4. Verify PNG dimensions against `elevation_points.x` and `.z`.
 5. Decode PNG samples to metres using metadata minimum and maximum.
 6. Build the terrain mesh with X columns, Z rows, and the NW-SE cell diagonal.
-7. Load runtime scenery if present; require its exact format and schema v2.
+7. Load runtime scenery if present; require its exact format and schema v3.
 8. Compare runtime world dimensions and spacing with heightmap metadata.
 9. Validate UUID uniqueness, point shapes, numeric finiteness, coordinate bounds, and
    `frontage_road_id` references.
 10. Apply one coherent world-axis conversion for the target engine.
-11. Resolve each prefab `asset_id` through the viewer's own manifest.
-12. Place prefab origins at exported X/Y/Z, convert yaw once, and honor visibility.
+11. Resolve prefab and native vegetation `asset_id` values through the viewer's own
+    manifest.
+12. Place prefab and native vegetation origins at exported X/Y/Z, convert yaw once,
+    apply uniform scale, and honor visibility.
 13. Build roads and hedgerows from ordered X/Z controls and conform viewer-generated
     geometry continuously to the final heightmap.
 14. Treat place and land-use regions as semantic polygons unless the viewer explicitly
     implements behavior for them.
-15. Load vegetation if present; require schema v1 and verify count, fields, UUIDs,
-    bounds, finite numbers, and positive scale.
-16. Resolve vegetation `model_or_species` through a viewer-owned registry.
+15. Validate native `vegetation_instances`, including UUIDs, enums, bounds, finite
+    numbers, positive scale, and nullable source-region provenance.
+16. If the bundle includes the separate imported-vegetation file, require schema v1,
+    verify its count and records, and adapt `model_or_species` through the viewer's
+    registry. Load it alongside native vegetation only when the bundle producer intends
+    both collections.
 17. Optionally compare vegetation and prefab Y against decoded terrain using the
     quantization-aware tolerance from section 10.
 18. Do not apply terrain pads, vegetation culling, road deformation, or asset-path
@@ -839,7 +968,7 @@ runtime scenery v2 has no project ID. Association is therefore user/bundle manag
 - [ ] Reference uint16 values match the documented encode formula.
 - [ ] The mesh uses the NW-SE cell diagonal.
 
-### Resampled vegetation
+### Resampled imported vegetation
 
 - [ ] `schema_version == 1`.
 - [ ] The coordinate-system string is supported.
@@ -854,7 +983,7 @@ runtime scenery v2 has no project ID. Association is therefore user/bundle manag
 ### Runtime scenery
 
 - [ ] `format == "polygon-county-runtime-scenery"`.
-- [ ] `schema_version == 2`.
+- [ ] `schema_version == 3`.
 - [ ] The coordinate-system string is supported.
 - [ ] `terrain_float32_sha256` is 64 lowercase hexadecimal characters.
 - [ ] Runtime world dimensions and spacing match heightmap metadata.
@@ -867,6 +996,12 @@ runtime scenery v2 has no project ID. Association is therefore user/bundle manag
 - [ ] Roads contain no Y samples or prebuilt ribbon geometry.
 - [ ] `frontage_road_id` is null or resolves to a runtime road ID.
 - [ ] Prefab scale is positive and rotation is finite.
+- [ ] `vegetation_instances` is present, even when empty.
+- [ ] Every native vegetation type is `forest_tree`, `scattered_tree`, or `shrub`.
+- [ ] Native vegetation scale is positive, yaw is in `[0, 360)`, and
+      `source_region_id` is a UUID or null.
+- [ ] Native vegetation is treated as concrete placement data, not inferred from or
+      replaced by woodland polygons.
 - [ ] `asset_status` is handled as asset-catalogue status, not viewer resolution truth.
 - [ ] Hidden objects are retained but not rendered unless explicitly desired.
 - [ ] Runtime scenery contains no GLB path, catalog path, or terrain-pad instruction.
@@ -876,7 +1011,7 @@ runtime scenery v2 has no project ID. Association is therefore user/bundle manag
 An importer **SHOULD** fail clearly rather than guess when:
 
 - runtime scenery has an unsupported format or schema version;
-- vegetation `schema_version` is not 1;
+- a supplied resampled vegetation document has `schema_version` other than 1;
 - the PNG is not 16-bit single-channel data;
 - required metadata fields are absent or inconsistent;
 - runtime world dimensions/spacing disagree with the selected terrain metadata;
@@ -884,19 +1019,26 @@ An importer **SHOULD** fail clearly rather than guess when:
 - required UUIDs are malformed or references do not resolve; or
 - required semantic values such as road elevation mode are unsupported.
 
-Runtime scenery v1 must not be silently interpreted as v2. V1 included a prefab-catalog
-source path and identified the source terrain hash; v2 removes the catalog path and
-identifies the composed final float32 terrain through `terrain_float32_sha256`. Older or
-future versions should use an explicit migration adapter.
+Runtime scenery v1 must not be silently interpreted as v2 or v3. V1 included a
+prefab-catalog source path and identified the source terrain hash; v2 removed the
+catalog path and identified the composed final float32 terrain through
+`terrain_float32_sha256`; v3 adds the required native `vegetation_instances` array.
+Older or future versions should use an explicit migration adapter.
+
+An importer that intentionally supports v2 should branch on the exact schema version
+and apply the compatibility behavior in section 8.9. It must not manufacture v3 native
+vegetation by reading woodland polygons. Whether a separate vegetation v1 file should
+be loaded is an explicit viewer-bundle decision for both v2 and v3.
 
 Heightmap metadata is currently unversioned. A tolerant metadata reader **MAY** ignore
 unknown future fields, but it should still require and validate all fields documented
 in section 6.
 
-The checked-in runtime schema validates the v2 top-level envelope. Importers should
-also perform the object-level validation in this guide, because current object records
-are generated by strict editor models even though the schema file does not yet encode
-every nested constraint.
+The checked-in runtime v3 schema is strict: it rejects unknown top-level and nested
+fields and encodes the required record shapes and enums. Importers should validate
+against it and additionally enforce semantic relationships that JSON Schema does not
+express, including cross-collection UUID uniqueness, frontage resolution, coordinate
+bounds, and agreement with the selected terrain metadata.
 
 ## 14. What is deliberately not exported
 
@@ -916,8 +1058,9 @@ The runtime products do not contain:
 - editor locks, selections, tools, undo/redo history, or UI state;
 - a shared bundle manifest or export-batch ID.
 
-An importer should treat the PNG as the authoritative runtime terrain, vegetation JSON
-as a complete placement list resampled onto that terrain, and runtime scenery JSON as
-engine-agnostic semantic scenery plus logical prefab placements. Mesh construction,
-asset resolution, pivots, materials, collision, LOD, and engine coordinate conversion
-remain viewer responsibilities.
+An importer should treat the PNG as the authoritative runtime terrain and runtime
+scenery v3 as engine-agnostic semantic scenery plus logical prefab and native
+vegetation placements. Resampled vegetation v1 is a separate imported-reference
+placement list, not an extension of v3 and not automatically safe to combine after
+conversion. Mesh construction, asset resolution, pivots, materials, collision, LOD,
+streaming, and engine coordinate conversion remain viewer responsibilities.
