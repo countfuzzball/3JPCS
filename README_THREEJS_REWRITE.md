@@ -2,8 +2,8 @@
 
 This is the **1.0.0 release** of the genuine static browser rewrite, completed through
 **Milestone 5** and the baked road-frontage house generator. The Python/Tkinter
-application remains checked in beside it as the behavioural and data-contract
-reference.
+application remains checked in under `python_reference/` as the behavioural and
+data-contract reference.
 
 ## Run and verify
 
@@ -217,6 +217,7 @@ src/benchmark/    exact-count deterministic Polygon County performance scene
 src/ui/           semantic DOM layout
 src/schemas/      explicitly versioned contract snapshots
 tests/            unit, golden fixture, and focused browser coverage
+python_reference/ preserved Tkinter prototype, schemas, and compatibility tests
 ```
 
 The Three.js scene is a disposable projection of model data. Rendering uses one

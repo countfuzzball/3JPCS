@@ -31,13 +31,16 @@ A standalone Python/Tkinter editor for composing engine-agnostic human scenery o
 an existing Polygon County terrain. It loads the Terrain Editor's float32 NPY as an
 immutable base, derives a separate in-memory working surface from per-object terrain
 pads, and exports viewer-ready terrain and semantic scenery without overwriting any
-source file.
+source file. The complete preserved implementation, schemas, and compatibility tests
+now live under [`python_reference/`](python_reference/README.md); the Three.js build
+does not import or execute them.
 
 ## Run
 
 Python 3.10 or newer is required.
 
 ```powershell
+cd python_reference
 python -m pip install -r requirements.txt
 python main.py
 # or: python -m scenery_editor
@@ -104,10 +107,11 @@ quantization, so small centimetre-scale differences from heights decoded out of 
 
 ## Architecture
 
-`scenery_editor/model` owns immutable authored records, terrain queries, validation,
-and working-terrain composition. `project_io` owns strict imports, migration,
-persistence, and final/runtime exports. `rendering` builds 2D terrain previews. `app`
-owns Tk widgets and transient gestures. Models and I/O do not import Tkinter.
+`python_reference/scenery_editor/model` owns immutable authored records, terrain
+queries, validation, and working-terrain composition. `project_io` owns strict imports,
+migration, persistence, and final/runtime exports. `rendering` builds 2D terrain
+previews. `app` owns Tk widgets and transient gestures. Models and I/O do not import
+Tkinter.
 
 See [docs/SCENERY_FORMATS.md](docs/SCENERY_FORMATS.md) for the v2 contracts and
 [docs/RUNTIME_EXPORT_IMPORTER_GUIDE.md](docs/RUNTIME_EXPORT_IMPORTER_GUIDE.md) for the
@@ -116,6 +120,7 @@ self-contained viewer/importer guide.
 ## Tests
 
 ```powershell
+cd python_reference
 python -m pytest -q
 ```
 
