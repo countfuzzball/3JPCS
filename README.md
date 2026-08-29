@@ -4,10 +4,11 @@ This repository now contains two deliberately separate implementations:
 
 - the preserved Python/Tkinter v0.2 prototype, which remains the behavioural and
   interchange-contract reference; and
-- the browser-based Vite/TypeScript/Three.js rewrite, currently implemented through
-  Milestone 5 (application shell, terrain/native geometry/prefab/vegetation authoring,
-  browser persistence and relinking, reference layers, versioned exports, and the full
-  seeded performance benchmark), followed by a baked road-frontage house generator.
+- the browser-based Vite/TypeScript/Three.js editor, released as **version 1.0.0** with
+  the completed Milestone 0–5 rewrite (application shell, terrain/native geometry,
+  prefab/vegetation authoring, browser persistence and relinking, reference layers,
+  versioned exports, and the full seeded performance benchmark), followed by a baked
+  road-frontage house generator.
 
 See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
 its verified commands, architecture, browser file limitations, and milestone status.

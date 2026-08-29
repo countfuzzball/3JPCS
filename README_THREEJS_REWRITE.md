@@ -1,8 +1,9 @@
 # Polygon County Scenery Editor — Three.js rewrite
 
-This is a genuine static browser rewrite, implemented through **Milestone 5**. The
-Python/Tkinter application remains checked in beside it as the behavioural and
-data-contract reference.
+This is the **1.0.0 release** of the genuine static browser rewrite, completed through
+**Milestone 5** and the baked road-frontage house generator. The Python/Tkinter
+application remains checked in beside it as the behavioural and data-contract
+reference.
 
 ## Run and verify
 

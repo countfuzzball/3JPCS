@@ -1,7 +1,7 @@
 # Polygon County Scenery Editor runtime exports: importer/consumer guide
 
 This document is a self-contained, importer-facing description of the runtime exports
-produced by Polygon County Scenery Editor v0.5. It is intended for implementing a
+produced by Polygon County Scenery Editor v1.0. It is intended for implementing a
 terrain viewer, Godot/Unity/Three.js importer, conversion tool, or validation pipeline
 without reading the editable `.scenery.json` project format.
 
@@ -28,7 +28,7 @@ resampled_imported_vegetation_schema_version: 1
 runtime_scenery_format: polygon-county-runtime-scenery
 runtime_scenery_schema_version: 3
 legacy_runtime_scenery_schema_version: 2
-complete_bundle_command: none in v0.5; export the products independently
+complete_bundle_command: none in v1.0; export the products independently
 runtime_asset_resolution: viewer-owned asset manifest keyed by asset_id
 units: metres
 origin: northwest / top-left of the world
@@ -71,7 +71,7 @@ The commands are:
 Final-terrain export triggers matching `.png` and `.json` downloads with the same stem.
 The runtime and vegetation documents do not embed their download filenames.
 
-There is no combined bundle command or bundle manifest in v0.5. Each export reads the
+There is no combined bundle command or bundle manifest in v1.0. Each export reads the
 current working terrain, which the editor keeps composed from the unchanged imported
 base terrain and current prefab terrain pads. If the applicable exports are run from
 the same unchanged scenery-project state, their terrain-derived values describe the
