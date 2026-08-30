@@ -19,3 +19,8 @@ required native `vegetation_instances` collection, derived terrain Y, normalized
 and catalogue-resolution status while omitting editor locks and terrain-pad state. The
 independently versioned v2 snapshot remains available only through the explicitly
 labelled legacy export; nonempty native vegetation is never silently omitted.
+
+`viewer-bundle-manifest-v1.schema.json` specifies the ZIP bundle's root
+`bundle_manifest.json`. The manifest names the required runtime-v3 entry and the
+optional resampled-vegetation-v1 and asset-catalog-v3 entries without changing or
+combining any of those inner contracts.

@@ -9,6 +9,7 @@ import {
   type SourceKey,
 } from "../io/projectFiles";
 import { runtimeSceneryV2Document, runtimeSceneryV3Document } from "../io/runtimeExport";
+import { viewerBundleArchive } from "../io/viewerBundle";
 import { AssetCatalog, type AssetDefinition } from "../model/assetCatalog";
 import type { PointXZ } from "../model/coordinates";
 import {
@@ -250,6 +251,7 @@ export class EditorApp {
     this.#elements.countyInput.addEventListener("change", () => { void this.#loadCountyReference(); });
     this.#elements.convertCountyButton.addEventListener("click", () => this.#convertCountyReference());
     this.#elements.convertVegetationButton.addEventListener("click", () => this.#convertVegetationReference());
+    this.#elements.exportViewerBundleButton.addEventListener("click", () => { void this.#exportViewerBundle(); });
     this.#elements.exportRuntimeButton.addEventListener("click", () => { void this.#exportRuntime(); });
     this.#elements.exportRuntimeV2Button.addEventListener("click", () => { void this.#exportLegacyRuntime(); });
     this.#elements.exportTerrainButton.addEventListener("click", () => { void this.#exportFinalTerrain(); });
@@ -495,6 +497,26 @@ export class EditorApp {
       : "Vegetation conversion added no records; every source placement is already represented";
   }
 
+  async #exportViewerBundle(): Promise<void> {
+    const { model, workingTerrain, vegetationReference, assetCatalog } = this.#store.state;
+    if (!model || !workingTerrain) return;
+    try {
+      this.#elements.exportViewerBundleButton.disabled = true;
+      this.#elements.statusMessage.textContent = "Building compressed viewer bundle…";
+      const archive = await viewerBundleArchive(model, workingTerrain, vegetationReference, assetCatalog);
+      downloadBytes(archive.bytes, archive.filename, "application/zip");
+      const optionalContents = [
+        vegetationReference ? `${vegetationReference.objects.length.toLocaleString()} imported vegetation records` : null,
+        assetCatalog ? `${assetCatalog.assets.length.toLocaleString()} asset catalogue entries` : null,
+      ].filter((value): value is string => value !== null);
+      this.#elements.statusMessage.textContent = `Exported viewer bundle with runtime scenery v3${optionalContents.length > 0 ? ` · ${optionalContents.join(" · ")}` : ""}`;
+    } catch (error) {
+      this.#elements.statusMessage.textContent = `Viewer bundle export failed — ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.#elements.exportViewerBundleButton.disabled = !this.#store.state.model || !this.#store.state.workingTerrain;
+    }
+  }
+
   async #exportRuntime(): Promise<void> {
     const { model, workingTerrain, assetCatalog } = this.#store.state;
     if (!model || !workingTerrain) return;
@@ -605,6 +627,7 @@ export class EditorApp {
     this.#elements.countyInput.disabled = !state.model;
     this.#elements.convertCountyButton.disabled = !state.model || !state.countyReference;
     this.#elements.convertVegetationButton.disabled = !state.model || !state.vegetationReference;
+    this.#elements.exportViewerBundleButton.disabled = !state.model || !state.workingTerrain;
     this.#elements.exportRuntimeButton.disabled = !state.model || !state.workingTerrain;
     this.#elements.exportRuntimeV2Button.disabled = !state.model || !state.workingTerrain;
     this.#elements.exportTerrainButton.disabled = !state.model || !state.workingTerrain;

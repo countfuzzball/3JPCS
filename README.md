@@ -86,6 +86,10 @@ only resamples its final `terrain_y_m`.
 
 ## Exports
 
+- **Viewer bundle (.zip)** writes a versioned bundle manifest, runtime scenery v3,
+  and—when loaded—the resampled vegetation v1 document and asset catalogue v3. The
+  bundle preserves those independent schemas; it does not contain final terrain,
+  editable project data, GLBs, textures, or other asset binaries.
 - **Export Final Terrain PNG + Metadata** writes an unsigned 16-bit greyscale PNG and
   a same-stem JSON descriptor. The descriptor follows the Terrain Editor's current
   importer-facing heightmap metadata contract.

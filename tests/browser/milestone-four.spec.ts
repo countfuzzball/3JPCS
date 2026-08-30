@@ -1,4 +1,5 @@
 import { expect, test, type Download } from "@playwright/test";
+import { strFromU8, unzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { countyDocument, vegetationDocument } from "../helpers/referenceFixtures";
@@ -51,6 +52,22 @@ test("opens with relinks, imports references, converts county, saves, and export
   const vegetation = JSON.parse(await readDownload(resampled)) as { generated_object_count: number; objects: Record<string, unknown>[] };
   expect(vegetation.generated_object_count).toBe(1);
   expect(vegetation.objects[0]?.terrain_y_m).not.toBe(10);
+
+  const bundle = await downloadFrom(page, () => page.getByRole("button", { name: "Viewer bundle (.zip)" }).click());
+  expect(bundle.suggestedFilename()).toBe("Milestone-Four-County.viewer-bundle-v1.zip");
+  const bundleFiles = unzipSync(await readFile(await bundle.path()));
+  const manifest = JSON.parse(strFromU8(bundleFiles["bundle_manifest.json"]!)) as {
+    contents: Record<string, { path: string } | null>;
+  };
+  expect(manifest.contents.runtime_scenery?.path).toBe("Milestone-Four-County.runtime-scenery-v3.json");
+  expect(manifest.contents.resampled_vegetation?.path).toBe("Milestone-Four-County.resampled-vegetation-v1.json");
+  expect(manifest.contents.asset_catalog?.path).toBe("Milestone-Four-County.asset-catalog-v3.json");
+  expect(Object.keys(bundleFiles).sort()).toEqual([
+    "Milestone-Four-County.asset-catalog-v3.json",
+    "Milestone-Four-County.resampled-vegetation-v1.json",
+    "Milestone-Four-County.runtime-scenery-v3.json",
+    "bundle_manifest.json",
+  ].sort());
 
   const terrainDownloads = downloadsFrom(page, 2);
   await page.getByRole("button", { name: "Final terrain PNG + JSON" }).click();

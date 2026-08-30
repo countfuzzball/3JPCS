@@ -22,6 +22,16 @@ export interface AssetDefinition {
   readonly display_name: string;
 }
 
+export interface AssetCatalogDocument {
+  readonly format: typeof ASSET_CATALOG_FORMAT;
+  readonly schema_version: typeof ASSET_CATALOG_SCHEMA_VERSION;
+  readonly category_defaults: Readonly<Record<string, { readonly proxy: CategoryProxy }>>;
+  readonly assets: Readonly<Record<string, {
+    readonly category: string;
+    readonly resource: string;
+  }>>;
+}
+
 export class AssetCatalog {
   public readonly assets: readonly AssetDefinition[];
   readonly #categoryDefaults: ReadonlyMap<string, CategoryProxy>;
@@ -94,6 +104,19 @@ export class AssetCatalog {
 
   public proxyForCategory(category: string): CategoryProxy | undefined {
     return this.#categoryDefaults.get(category);
+  }
+
+  public toDocument(): AssetCatalogDocument {
+    return {
+      format: ASSET_CATALOG_FORMAT,
+      schema_version: ASSET_CATALOG_SCHEMA_VERSION,
+      category_defaults: Object.fromEntries(
+        [...this.#categoryDefaults].map(([category, proxy]) => [category, { proxy: { ...proxy } }]),
+      ),
+      assets: Object.fromEntries(
+        this.assets.map((asset) => [asset.asset_id, { category: asset.category, resource: asset.resource }]),
+      ),
+    };
   }
 }
 

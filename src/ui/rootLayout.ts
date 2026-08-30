@@ -27,6 +27,7 @@ export interface EditorElements {
   readonly countySummary: HTMLElement;
   readonly convertCountyButton: HTMLButtonElement;
   readonly convertVegetationButton: HTMLButtonElement;
+  readonly exportViewerBundleButton: HTMLButtonElement;
   readonly exportRuntimeButton: HTMLButtonElement;
   readonly exportRuntimeV2Button: HTMLButtonElement;
   readonly exportTerrainButton: HTMLButtonElement;
@@ -207,6 +208,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
           </section>
           <section class="panel-section export-section">
             <div class="section-heading"><span>08</span><h2>Exports</h2></div>
+            <button id="export-viewer-bundle" class="button button-primary" type="button" disabled>Viewer bundle (.zip)</button>
             <button id="export-runtime" class="button" type="button" disabled>Runtime scenery v3</button>
             <button id="export-runtime-v2" class="button" type="button" disabled>Legacy runtime scenery v2</button>
             <button id="export-terrain" class="button" type="button" disabled>Final terrain PNG + JSON</button>
@@ -366,6 +368,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     countySummary: byId("county-summary", HTMLElement),
     convertCountyButton: byId("convert-county", HTMLButtonElement),
     convertVegetationButton: byId("convert-vegetation", HTMLButtonElement),
+    exportViewerBundleButton: byId("export-viewer-bundle", HTMLButtonElement),
     exportRuntimeButton: byId("export-runtime", HTMLButtonElement),
     exportRuntimeV2Button: byId("export-runtime-v2", HTMLButtonElement),
     exportTerrainButton: byId("export-terrain", HTMLButtonElement),

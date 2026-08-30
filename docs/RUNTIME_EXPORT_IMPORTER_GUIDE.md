@@ -28,7 +28,9 @@ resampled_imported_vegetation_schema_version: 1
 runtime_scenery_format: polygon-county-runtime-scenery
 runtime_scenery_schema_version: 3
 legacy_runtime_scenery_schema_version: 2
-complete_bundle_command: none in v1.0; export the products independently
+viewer_bundle_format: polygon-county-viewer-bundle
+viewer_bundle_schema_version: 1
+viewer_bundle_scope: scenery JSON and a loaded catalogue; terrain and asset binaries remain separate
 runtime_asset_resolution: viewer-owned asset manifest keyed by asset_id
 units: metres
 origin: northwest / top-left of the world
@@ -40,9 +42,11 @@ Normative implementation and schema files in this repository are:
 
 - [`src/io/finalExport.ts`](../src/io/finalExport.ts)
 - [`src/io/runtimeExport.ts`](../src/io/runtimeExport.ts)
+- [`src/io/viewerBundle.ts`](../src/io/viewerBundle.ts)
 - [`src/terrain/WorkingTerrain.ts`](../src/terrain/WorkingTerrain.ts)
 - [`src/schemas/runtime-scenery-v3.schema.json`](../src/schemas/runtime-scenery-v3.schema.json)
 - [`src/schemas/asset-catalog-v3.schema.json`](../src/schemas/asset-catalog-v3.schema.json)
+- [`src/schemas/viewer-bundle-manifest-v1.schema.json`](../src/schemas/viewer-bundle-manifest-v1.schema.json)
 
 The frozen v2 compatibility contract is
 [`src/schemas/runtime-scenery-v2.schema.json`](../src/schemas/runtime-scenery-v2.schema.json).
@@ -51,7 +55,7 @@ The words **MUST**, **SHOULD**, and **MAY** below describe importer behavior.
 
 ## 1. Exported files
 
-The Scenery Editor currently exposes four independent export commands:
+The Scenery Editor exposes four individual export commands and one ZIP bundle command:
 
 | Export | Browser download filename | Identification | Current version |
 | --- | --- | --- | --- |
@@ -60,6 +64,7 @@ The Scenery Editor currently exposes four independent export commands:
 | Runtime scenery | `<project>.runtime-scenery-v3.json` | Downloaded JSON | Fixed format plus `schema_version == 3` |
 | Legacy runtime scenery | `<project>.runtime-scenery-v2.json` | Downloaded JSON | Fixed format plus `schema_version == 2` |
 | Resampled imported vegetation | `<project>.resampled-vegetation-v1.json` | Downloaded JSON | `schema_version == 1` |
+| Viewer bundle | `<project>.viewer-bundle-v1.zip` | Root `bundle_manifest.json` | Manifest schema v1 |
 
 The commands are:
 
@@ -67,15 +72,15 @@ The commands are:
 - **Legacy runtime scenery v2**
 - **Final terrain PNG + JSON**
 - **Resampled vegetation v1**
+- **Viewer bundle (.zip)**
 
 Final-terrain export triggers matching `.png` and `.json` downloads with the same stem.
 The runtime and vegetation documents do not embed their download filenames.
 
-There is no combined bundle command or bundle manifest in v1.0. Each export reads the
-current working terrain, which the editor keeps composed from the unchanged imported
-base terrain and current prefab terrain pads. If the applicable exports are run from
-the same unchanged scenery-project state, their terrain-derived values describe the
-same float32 surface.
+Each export reads the current working terrain, which the editor keeps composed from the
+unchanged imported base terrain and current prefab terrain pads. The bundle generates
+all of its entries from one captured editor state, so their terrain-derived values
+describe the same float32 surface.
 
 Cross-file identity limitations:
 
@@ -87,8 +92,65 @@ Cross-file identity limitations:
   PNG does not contain that hash;
 - no shared export-batch ID proves that independently selected files belong together.
 
-An importer **SHOULD** keep the selected files together as one viewer-side bundle and
-perform the consistency checks in section 10.
+For independent downloads, an importer **SHOULD** keep the selected files together and
+perform the consistency checks in section 10. For a ZIP bundle, the manifest explicitly
+associates its entries with the editor project name, although it does not add an export
+batch ID to the inner contracts.
+
+### Viewer bundle v1
+
+The ZIP contains root-level UTF-8 JSON files only:
+
+```text
+<project>.viewer-bundle-v1.zip
+├── bundle_manifest.json
+├── <project>.runtime-scenery-v3.json
+├── <project>.resampled-vegetation-v1.json  (only when a reference is loaded)
+└── <project>.asset-catalog-v3.json         (only when a catalogue is loaded)
+```
+
+The manifest has this shape:
+
+```json
+{
+  "format": "polygon-county-viewer-bundle",
+  "schema_version": 1,
+  "project_name": "Example County",
+  "contents": {
+    "runtime_scenery": {
+      "path": "Example-County.runtime-scenery-v3.json",
+      "media_type": "application/json",
+      "format": "polygon-county-runtime-scenery",
+      "schema_version": 3
+    },
+    "resampled_vegetation": {
+      "path": "Example-County.resampled-vegetation-v1.json",
+      "media_type": "application/json",
+      "schema_version": 1
+    },
+    "asset_catalog": {
+      "path": "Example-County.asset-catalog-v3.json",
+      "media_type": "application/json",
+      "format": "polygon-county-asset-catalog",
+      "schema_version": 3
+    }
+  }
+}
+```
+
+An absent optional source is represented by `null`, not by a missing manifest key or
+an empty placeholder file. Runtime scenery is always present. The ZIP does not contain
+the final heightmap, terrain metadata, editable project, source NPY, GLBs, textures, or
+other asset binaries.
+
+The bundle is a transport container, not a new combined scenery schema. Consumers
+**MUST** validate every non-null entry against its own advertised contract. In
+particular, resampled imported vegetation remains separate from runtime-v3 native
+vegetation and is not converted, copied into, or deduplicated against runtime scenery.
+
+For archive safety, consumers **SHOULD** reject duplicate entry names, absolute paths,
+parent-directory traversal, unlisted payloads, and entries whose actual media or
+schema identification disagrees with the manifest.
 
 ## 2. Runtime ownership and authority
 
@@ -104,7 +166,7 @@ runtime scenery v3 JSON
 resampled vegetation v1 JSON (optional companion file)
     immutable imported-reference placements with final-terrain Y
 
-viewer-owned asset manifest
+asset catalogue v3 or equivalent viewer-owned manifest
     asset_id -> engine resource
 ```
 
@@ -922,34 +984,38 @@ between independently exported files is therefore user/bundle managed.
 
 ## 11. Recommended importer algorithm
 
-1. Ask the user for the final terrain PNG and locate its same-stem metadata JSON.
-2. Parse metadata and validate all arithmetic relationships.
-3. Decode the PNG through a 16-bit single-channel path.
-4. Verify PNG dimensions against `elevation_points.x` and `.z`.
-5. Decode PNG samples to metres using metadata minimum and maximum.
-6. Build the terrain mesh with X columns, Z rows, and the NW-SE cell diagonal.
-7. Load runtime scenery if present; require its exact format and schema v3.
-8. Compare runtime world dimensions and spacing with heightmap metadata.
-9. Validate UUID uniqueness, point shapes, numeric finiteness, coordinate bounds, and
+1. If given a viewer-bundle ZIP, locate the single root `bundle_manifest.json`, require
+   its exact format and schema v1, apply archive-safety checks, and resolve every
+   non-null listed entry. Otherwise accept the equivalent JSON files independently.
+2. Ask the user for the separately exported final terrain PNG and locate its same-stem
+   metadata JSON.
+3. Parse metadata and validate all arithmetic relationships.
+4. Decode the PNG through a 16-bit single-channel path.
+5. Verify PNG dimensions against `elevation_points.x` and `.z`.
+6. Decode PNG samples to metres using metadata minimum and maximum.
+7. Build the terrain mesh with X columns, Z rows, and the NW-SE cell diagonal.
+8. Load runtime scenery; require its exact format and schema v3.
+9. Compare runtime world dimensions and spacing with heightmap metadata.
+10. Validate UUID uniqueness, point shapes, numeric finiteness, coordinate bounds, and
    `frontage_road_id` references.
-10. Apply one coherent world-axis conversion for the target engine.
-11. Resolve prefab and native vegetation `asset_id` values through the viewer's own
-    manifest.
-12. Place prefab and native vegetation origins at exported X/Y/Z, convert yaw once,
+11. Apply one coherent world-axis conversion for the target engine.
+12. Resolve prefab and native vegetation `asset_id` values through the bundled
+    catalogue when present, or through the viewer's own manifest.
+13. Place prefab and native vegetation origins at exported X/Y/Z, convert yaw once,
     apply uniform scale, and honor visibility.
-13. Build roads and hedgerows from ordered X/Z controls and conform viewer-generated
+14. Build roads and hedgerows from ordered X/Z controls and conform viewer-generated
     geometry continuously to the final heightmap.
-14. Treat place and land-use regions as semantic polygons unless the viewer explicitly
+15. Treat place and land-use regions as semantic polygons unless the viewer explicitly
     implements behavior for them.
-15. Validate native `vegetation_instances`, including UUIDs, enums, bounds, finite
+16. Validate native `vegetation_instances`, including UUIDs, enums, bounds, finite
     numbers, positive scale, and nullable source-region provenance.
-16. If the bundle includes the separate imported-vegetation file, require schema v1,
+17. If the bundle includes the separate imported-vegetation file, require schema v1,
     verify its count and records, and adapt `model_or_species` through the viewer's
     registry. Load it alongside native vegetation only when the bundle producer intends
     both collections.
-17. Optionally compare vegetation and prefab Y against decoded terrain using the
+18. Optionally compare vegetation and prefab Y against decoded terrain using the
     quantization-aware tolerance from section 10.
-18. Do not apply terrain pads, vegetation culling, road deformation, or asset-path
+19. Do not apply terrain pads, vegetation culling, road deformation, or asset-path
     lookup rules inferred from the editable project.
 
 ## 12. Validation checklist
@@ -1048,7 +1114,8 @@ The runtime products do not contain:
 - the original float32 base-terrain NPY;
 - the exact float32 working array as a separate NPY;
 - prefab terrain-pad settings or composition order;
-- the separately distributed shared asset catalogue;
+- an asset catalogue inside the individual runtime or vegetation documents (viewer
+  bundle v1 may package a loaded catalogue as its own unchanged JSON entry);
 - GLB paths, engine resource paths, materials, or asset binaries;
 - prefab planning envelopes, authoritative mesh bounds, pivot corrections, or
   foundation depth;
@@ -1056,7 +1123,7 @@ The runtime products do not contain:
 - place/land-use procedural generation rules;
 - road or hedgerow Y samples, meshes, cross-sections, joins, UVs, or tessellation;
 - editor locks, selections, tools, undo/redo history, or UI state;
-- a shared bundle manifest or export-batch ID.
+- an export-batch ID shared inside the independent runtime contracts.
 
 An importer should treat the PNG as the authoritative runtime terrain and runtime
 scenery v3 as engine-agnostic semantic scenery plus logical prefab and native

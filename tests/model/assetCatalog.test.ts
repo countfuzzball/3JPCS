@@ -26,6 +26,7 @@ describe("AssetCatalog", () => {
       display_name: "Example House",
     });
     expect(catalog.proxyForCategory("barn")).toEqual({ width_m: 18, depth_m: 28, wall_height_m: 8 });
+    expect(catalog.toDocument()).toEqual(document());
   });
 
   it("rejects legacy catalogue versions clearly", () => {

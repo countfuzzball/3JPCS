@@ -170,7 +170,13 @@ with a road, or leave the terrain world. Generation bakes ordinary editable pref
 records with the road UUID, disabled terrain pads, and one bulk undo command. Later
 road edits do not reposition them, and no project/runtime schema change is involved.
 
-The current verification baseline is 113 Vitest tests, 6 Playwright browser flows,
+The viewer-bundle export packages runtime scenery v3 plus any currently loaded
+resampled vegetation v1 and asset catalogue v3 into one compressed ZIP. A strict
+manifest v1 identifies each inner file and records absent optional entries as `null`;
+the inner schemas remain independent. Final terrain and actual asset resources remain
+separate exports.
+
+The current verification baseline is 115 Vitest tests, 6 Playwright browser flows,
 and all 45 Python reference tests.
 
 ## Source-of-truth priority
