@@ -1,6 +1,6 @@
 # Settlement automation milestone plan
 
-Status: SA-0 implemented; SA-1 through SA-5 remain planned.
+Status: SA-0 and SA-1 implemented; SA-2 through SA-5 remain planned.
 
 This document defines the staged integration of terrain-based settlement surveying,
 A* road routing, and settlement-scale automatic frontage into the browser-based
@@ -158,6 +158,11 @@ fixtures before porting algorithms.
 - No application behavior or schema changes in this milestone.
 
 ## SA-1 — Shared deterministic generation foundations
+
+Implementation record: the pure TypeScript foundations are in [`src/generation`](../src/generation),
+with deterministic coverage in [`tests/generation`](../tests/generation). The existing
+frontage assistant now consumes the shared polyline and collision geometry without a
+public API or behavior change.
 
 ### Goal
 
