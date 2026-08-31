@@ -176,6 +176,10 @@ manifest v1 identifies each inner file and records absent optional entries as `n
 the inner schemas remain independent. Final terrain and actual asset resources remain
 separate exports.
 
+Future terrain settlement survey, A* road routing, and settlement-scale frontage work
+is specified as independently referable `SA-0` through `SA-5` milestones in
+[`docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md`](docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md).
+
 The current verification baseline is 115 Vitest tests, 6 Playwright browser flows,
 and all 45 Python reference tests.
 
