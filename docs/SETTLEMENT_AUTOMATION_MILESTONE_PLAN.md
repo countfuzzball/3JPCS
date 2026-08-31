@@ -1,6 +1,6 @@
 # Settlement automation milestone plan
 
-Status: SA-0 and SA-1 implemented; SA-2 through SA-5 remain planned.
+Status: SA-0 through SA-3 implemented; SA-4 and SA-5 remain planned.
 
 This document defines the staged integration of terrain-based settlement surveying,
 A* road routing, and settlement-scale automatic frontage into the browser-based
@@ -198,6 +198,18 @@ user-visible generation yet.
 
 ## SA-2 — Terrain settlement survey
 
+Implementation record: the deterministic survey, profiles, grade/degree conversions,
+site evaluation, ranking, diagnostics, and 32-point boundaries are in
+[`src/generation/settlementSurvey.ts`](../src/generation/settlementSurvey.ts). The
+transient panel state and one-command acceptance live in
+[`src/app/EditorApp.ts`](../src/app/EditorApp.ts), while the preview is rendered as
+three batched draw objects by
+[`src/rendering/SettlementSurveyRenderAdapter.ts`](../src/rendering/SettlementSurveyRenderAdapter.ts).
+Unit/integration coverage is in
+[`tests/generation/settlementSurvey.test.ts`](../tests/generation/settlementSurvey.test.ts)
+and the production-browser workflow is in
+[`tests/browser/settlement-survey.spec.ts`](../tests/browser/settlement-survey.spec.ts).
+
 ### Goal
 
 Rank viable settlement locations over the current working terrain and bake user-chosen
@@ -260,6 +272,23 @@ The legacy defaults become editable starting profiles rather than fixed world po
 - A Playwright flow surveys terrain, accepts a site, undoes it, and restores it.
 
 ## SA-3 — A* terrain-aware road routing
+
+Implementation record: the deterministic eight-neighbour A* search, terrain snapshot,
+node budgets, post-processing, revalidation, and diagnostics are in
+[`src/generation/roadRouting.ts`](../src/generation/roadRouting.ts). Module-worker
+ownership, transferred elevation buffers, cancellation, and stale-result suppression
+are in
+[`src/generation/RoadRoutingWorkerClient.ts`](../src/generation/RoadRoutingWorkerClient.ts)
+and [`src/workers/roadRoutingWorker.ts`](../src/workers/roadRoutingWorker.ts). The
+two-click tool, visible-road endpoint snapping, settings, diagnostics, and one-command
+acceptance live in [`src/app/EditorApp.ts`](../src/app/EditorApp.ts); the transient
+width/centreline/endpoint preview is batched by
+[`src/rendering/RoadRouteRenderAdapter.ts`](../src/rendering/RoadRouteRenderAdapter.ts).
+Algorithm and worker-lifecycle tests are in
+[`tests/generation/roadRouting.test.ts`](../tests/generation/roadRouting.test.ts) and
+[`tests/generation/RoadRoutingWorkerClient.test.ts`](../tests/generation/RoadRoutingWorkerClient.test.ts),
+with the responsive production-browser persistence/export flow in
+[`tests/browser/road-routing.spec.ts`](../tests/browser/road-routing.spec.ts).
 
 ### Goal
 

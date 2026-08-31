@@ -8,6 +8,36 @@ export interface EditorElements {
   readonly redoButton: HTMLButtonElement;
   readonly toolButtons: readonly HTMLButtonElement[];
   readonly toolInstructions: HTMLElement;
+  readonly settlementSurveyOptions: HTMLFieldSetElement;
+  readonly settlementProfile: HTMLSelectElement;
+  readonly settlementCandidateCount: HTMLInputElement;
+  readonly settlementRadius: HTMLInputElement;
+  readonly settlementMaximumSlope: HTMLInputElement;
+  readonly settlementMinimumSeparation: HTMLInputElement;
+  readonly settlementEdgeClearance: HTMLInputElement;
+  readonly settlementUsePreferredElevation: HTMLInputElement;
+  readonly settlementPreferredElevation: HTMLInputElement;
+  readonly settlementSeed: HTMLInputElement;
+  readonly settlementAttemptBudget: HTMLInputElement;
+  readonly runSettlementSurveyButton: HTMLButtonElement;
+  readonly acceptSettlementsButton: HTMLButtonElement;
+  readonly clearSettlementSurveyButton: HTMLButtonElement;
+  readonly settlementSurveySummary: HTMLElement;
+  readonly settlementSurveyCandidates: HTMLElement;
+  readonly routeRoadOptions: HTMLFieldSetElement;
+  readonly routeSnapEndpoints: HTMLInputElement;
+  readonly routeRoadClass: HTMLSelectElement;
+  readonly routeRoadSurface: HTMLSelectElement;
+  readonly routeRoadWidth: HTMLInputElement;
+  readonly routeGridStep: HTMLInputElement;
+  readonly routeSlopeWeight: HTMLInputElement;
+  readonly routeMaximumGrade: HTMLInputElement;
+  readonly routeTurnPenalty: HTMLInputElement;
+  readonly routeEdgeClearance: HTMLInputElement;
+  readonly routeSeed: HTMLInputElement;
+  readonly routeSummary: HTMLElement;
+  readonly acceptRoadRouteButton: HTMLButtonElement;
+  readonly clearRoadRouteButton: HTMLButtonElement;
   readonly assetCatalogInput: HTMLInputElement;
   readonly assetSelect: HTMLSelectElement;
   readonly assetSummary: HTMLElement;
@@ -127,9 +157,85 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
               <div class="tool-grid">
                 ${toolButton("road", "━", "Road")}
                 ${toolButton("hedgerow", "┄", "Hedgerow")}
+                ${toolButton("route_road", "⌁", "Route road")}
               </div>
             </div>
             <p id="tool-instructions" class="milestone-note">Create a terrain project to enable geometry authoring.</p>
+          </section>
+          <section class="panel-section settlement-survey-section">
+            <div class="section-heading"><span>SA</span><h2>Settlement survey</h2></div>
+            <fieldset id="settlement-survey-options" class="settlement-survey-options" disabled>
+              <label class="survey-profile" for="settlement-profile"><span>Profile / place type</span>
+                <select id="settlement-profile">
+                  <option value="town">Town</option>
+                  <option value="village">Village</option>
+                  <option value="hamlet">Hamlet-sized → village</option>
+                  <option value="farm">Farm</option>
+                </select>
+              </label>
+              <div class="survey-measures">
+                <label for="settlement-candidate-count"><span>Candidates</span><input id="settlement-candidate-count" type="number" min="1" max="100" step="1" value="5" /></label>
+                <label for="settlement-radius"><span>Radius</span><input id="settlement-radius" type="number" min="0.1" step="1" value="470" /><small>m</small></label>
+                <label for="settlement-maximum-slope"><span>Maximum slope</span><input id="settlement-maximum-slope" type="number" min="0.1" max="89.9" step="0.1" value="6.3" /><small>°</small></label>
+                <label for="settlement-minimum-separation"><span>Minimum separation</span><input id="settlement-minimum-separation" type="number" min="0" step="10" value="250" /><small>m</small></label>
+                <label for="settlement-edge-clearance"><span>World-edge clearance</span><input id="settlement-edge-clearance" type="number" min="0" step="10" value="50" /><small>m</small></label>
+                <label for="settlement-seed"><span>Integer seed</span><input id="settlement-seed" type="number" step="1" value="1" /></label>
+                <label for="settlement-attempt-budget"><span>Attempt budget</span><input id="settlement-attempt-budget" type="number" min="1" max="100000" step="100" value="1000" /></label>
+              </div>
+              <label class="survey-preferred-toggle" for="settlement-use-preferred-elevation">
+                <input id="settlement-use-preferred-elevation" type="checkbox" checked />
+                <span>Prefer elevation near lowland reference</span>
+              </label>
+              <label class="survey-preferred-value" for="settlement-preferred-elevation"><span>Preferred elevation</span><input id="settlement-preferred-elevation" type="number" step="1" value="0" /><small>m</small></label>
+              <div class="settlement-survey-actions">
+                <button id="run-settlement-survey" class="button button-primary" type="button">Run survey</button>
+                <button id="accept-settlements" class="button" type="button" disabled>Accept selected</button>
+                <button id="clear-settlement-survey" class="button" type="button" disabled>Clear preview</button>
+              </div>
+              <p id="settlement-survey-summary" class="settlement-survey-summary" role="status">Run a deterministic survey over the current working terrain.</p>
+              <div id="settlement-survey-candidates" class="settlement-survey-candidates" aria-label="Ranked settlement candidates"></div>
+            </fieldset>
+          </section>
+          <section class="panel-section route-road-section">
+            <div class="section-heading"><span>SA</span><h2>Terrain road routing</h2></div>
+            <fieldset id="route-road-options" class="settlement-survey-options route-road-options" disabled>
+              <div class="route-road-selects">
+                <label for="route-road-class"><span>Class for routed road</span>
+                  <select id="route-road-class">
+                    <option value="county_road">County road</option>
+                    <option value="local_road" selected>Local road</option>
+                    <option value="lane">Lane</option>
+                    <option value="farm_track">Farm track</option>
+                    <option value="military_road">Military road</option>
+                  </select>
+                </label>
+                <label for="route-road-surface"><span>Material for routed road</span>
+                  <select id="route-road-surface">
+                    <option value="dirt">Dirt</option>
+                    <option value="gravel" selected>Gravel</option>
+                    <option value="paved">Paved</option>
+                  </select>
+                </label>
+              </div>
+              <div class="survey-measures route-road-measures">
+                <label for="route-road-width"><span>Routed width</span><input id="route-road-width" type="number" min="0.1" step="0.5" value="7.5" /><small>m</small></label>
+                <label for="route-grid-step"><span>Routing grid step</span><input id="route-grid-step" type="number" min="0.1" step="1" value="50" /><small>m</small></label>
+                <label for="route-slope-weight"><span>Slope penalty</span><input id="route-slope-weight" type="number" min="0" step="1" value="42" /></label>
+                <label for="route-maximum-grade"><span>Maximum grade</span><input id="route-maximum-grade" type="number" min="0.001" step="0.01" value="0.18" /></label>
+                <label for="route-turn-penalty"><span>Turn penalty</span><input id="route-turn-penalty" type="number" min="0" step="0.5" value="4" /><small>m</small></label>
+                <label for="route-edge-clearance"><span>Routing edge margin</span><input id="route-edge-clearance" type="number" min="0" step="1" value="0" /><small>m</small></label>
+                <label for="route-seed"><span>Tie-breaking seed</span><input id="route-seed" type="number" step="1" value="1" /></label>
+              </div>
+              <label class="survey-preferred-toggle" for="route-snap-endpoints">
+                <input id="route-snap-endpoints" type="checkbox" checked />
+                <span>Snap clicks to shown native roads</span>
+              </label>
+              <div class="settlement-survey-actions route-road-actions">
+                <button id="accept-road-route" class="button button-primary" type="button" disabled>Accept route</button>
+                <button id="clear-road-route" class="button" type="button" disabled>Cancel / clear</button>
+              </div>
+              <p id="route-summary" class="settlement-survey-summary route-summary" role="status">Turn on Route road, then click a start and destination.</p>
+            </fieldset>
           </section>
           <section class="panel-section prefab-section">
             <div class="section-heading"><span>02</span><h2>Prefab assets</h2></div>
@@ -268,7 +374,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         <div class="status-metric"><span>X / Z</span><strong id="status-coordinates">—</strong></div>
         <div class="status-metric"><span>ELEVATION</span><strong id="status-elevation">—</strong></div>
         <div class="status-metric"><span>SLOPE</span><strong id="status-slope">—</strong></div>
-        <div class="status-build">MILESTONES 0–5</div>
+        <div class="status-build">MILESTONES 0–5 · SA-3</div>
       </footer>
     </main>
 
@@ -349,6 +455,36 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     redoButton: byId("redo", HTMLButtonElement),
     toolButtons: [...document.querySelectorAll<HTMLButtonElement>("[data-tool]")],
     toolInstructions: byId("tool-instructions", HTMLElement),
+    settlementSurveyOptions: byId("settlement-survey-options", HTMLFieldSetElement),
+    settlementProfile: byId("settlement-profile", HTMLSelectElement),
+    settlementCandidateCount: byId("settlement-candidate-count", HTMLInputElement),
+    settlementRadius: byId("settlement-radius", HTMLInputElement),
+    settlementMaximumSlope: byId("settlement-maximum-slope", HTMLInputElement),
+    settlementMinimumSeparation: byId("settlement-minimum-separation", HTMLInputElement),
+    settlementEdgeClearance: byId("settlement-edge-clearance", HTMLInputElement),
+    settlementUsePreferredElevation: byId("settlement-use-preferred-elevation", HTMLInputElement),
+    settlementPreferredElevation: byId("settlement-preferred-elevation", HTMLInputElement),
+    settlementSeed: byId("settlement-seed", HTMLInputElement),
+    settlementAttemptBudget: byId("settlement-attempt-budget", HTMLInputElement),
+    runSettlementSurveyButton: byId("run-settlement-survey", HTMLButtonElement),
+    acceptSettlementsButton: byId("accept-settlements", HTMLButtonElement),
+    clearSettlementSurveyButton: byId("clear-settlement-survey", HTMLButtonElement),
+    settlementSurveySummary: byId("settlement-survey-summary", HTMLElement),
+    settlementSurveyCandidates: byId("settlement-survey-candidates", HTMLElement),
+    routeRoadOptions: byId("route-road-options", HTMLFieldSetElement),
+    routeSnapEndpoints: byId("route-snap-endpoints", HTMLInputElement),
+    routeRoadClass: byId("route-road-class", HTMLSelectElement),
+    routeRoadSurface: byId("route-road-surface", HTMLSelectElement),
+    routeRoadWidth: byId("route-road-width", HTMLInputElement),
+    routeGridStep: byId("route-grid-step", HTMLInputElement),
+    routeSlopeWeight: byId("route-slope-weight", HTMLInputElement),
+    routeMaximumGrade: byId("route-maximum-grade", HTMLInputElement),
+    routeTurnPenalty: byId("route-turn-penalty", HTMLInputElement),
+    routeEdgeClearance: byId("route-edge-clearance", HTMLInputElement),
+    routeSeed: byId("route-seed", HTMLInputElement),
+    routeSummary: byId("route-summary", HTMLElement),
+    acceptRoadRouteButton: byId("accept-road-route", HTMLButtonElement),
+    clearRoadRouteButton: byId("clear-road-route", HTMLButtonElement),
     assetCatalogInput: byId("asset-catalog-file", HTMLInputElement),
     assetSelect: byId("asset-select", HTMLSelectElement),
     assetSummary: byId("asset-summary", HTMLElement),

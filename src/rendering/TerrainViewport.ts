@@ -31,6 +31,11 @@ import {
   type VegetationSyncMetrics,
 } from "./VegetationRenderDataManager";
 import type { FrontagePlan } from "../interaction/frontageAssist";
+import {
+  SettlementSurveyRenderAdapter,
+  type SettlementSurveyProjection,
+} from "./SettlementSurveyRenderAdapter";
+import { RoadRouteRenderAdapter, type RoadRouteProjection } from "./RoadRouteRenderAdapter";
 
 export interface ViewportPerformanceSnapshot {
   readonly drawCalls: number;
@@ -75,6 +80,8 @@ export class TerrainViewport {
   readonly #resizeObserver: ResizeObserver;
   readonly #callbacks: TerrainViewportCallbacks;
   readonly #geometry = new GeometryRenderAdapter();
+  readonly #settlementSurvey = new SettlementSurveyRenderAdapter();
+  readonly #roadRoute = new RoadRouteRenderAdapter();
   readonly #prefabs = new PrefabRenderAdapter();
   readonly #references = new ReferenceRenderAdapter();
   readonly #vegetation = new VegetationRenderDataManager();
@@ -101,6 +108,8 @@ export class TerrainViewport {
     this.#camera.up.set(0, 0, -1);
     this.#scene.add(new THREE.AmbientLight(0xffffff, 1));
     this.#scene.add(this.#geometry.group);
+    this.#scene.add(this.#settlementSurvey.group);
+    this.#scene.add(this.#roadRoute.group);
     this.#scene.add(this.#prefabs.group);
     this.#scene.add(this.#vegetation.group);
     this.#scene.add(this.#references.group);
@@ -159,6 +168,8 @@ export class TerrainViewport {
     draft: DraftProjection,
     ghost: PrefabGhostProjection | null,
     frontagePreview: FrontagePlan | null,
+    settlementSurvey: SettlementSurveyProjection | null,
+    roadRoute: RoadRouteProjection | null,
     county: CountyReference | null,
     vegetation: VegetationReference | null,
     referenceLayers: ReferenceLayerState,
@@ -168,6 +179,8 @@ export class TerrainViewport {
       ? terrain.maximumElevationM + Math.max(1, (terrain.maximumElevationM - terrain.minimumElevationM) * 0.01)
       : 1;
     this.#geometry.sync(model?.geometryEntities() ?? [], selectedId, selectedVertex, geometryLayers, draft, overlayY);
+    this.#settlementSurvey.sync(settlementSurvey, overlayY);
+    this.#roadRoute.sync(roadRoute, overlayY);
     this.#prefabs.sync(
       (model?.list("prefab") ?? []).filter((entity) => entity.kind === "prefab"),
       catalog,
@@ -283,10 +296,14 @@ export class TerrainViewport {
     }
     this.#disposeTerrain();
     this.#geometry.dispose();
+    this.#settlementSurvey.dispose();
+    this.#roadRoute.dispose();
     this.#prefabs.dispose();
     this.#references.dispose();
     this.#vegetation.dispose();
     this.#scene.remove(this.#geometry.group);
+    this.#scene.remove(this.#settlementSurvey.group);
+    this.#scene.remove(this.#roadRoute.group);
     this.#scene.remove(this.#prefabs.group);
     this.#scene.remove(this.#references.group);
     this.#scene.remove(this.#vegetation.group);

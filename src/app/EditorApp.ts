@@ -27,6 +27,8 @@ import {
   type PointTuple,
   type PrefabInstance,
   type Road,
+  type RoadClass,
+  type RoadSurface,
   type VegetationInstance,
 } from "../model/entities";
 import {
@@ -75,11 +77,26 @@ import { buildRootLayout, type EditorElements } from "../ui/rootLayout";
 import { EditorStore, type EditorState } from "./EditorStore";
 import type { SyntheticBenchmarkScene } from "../benchmark/syntheticScene";
 import type { FrameTimeSummary, ViewportPerformanceSnapshot } from "../rendering/TerrainViewport";
+import {
+  gradeToDegrees,
+  runSettlementSurvey,
+  settlementSurveyProfile,
+  type SettlementSurveyProfileId,
+  type SettlementSurveyResult,
+  type SettlementSurveySettings,
+} from "../generation/settlementSurvey";
+import { RoadRoutingWorkerClient } from "../generation/RoadRoutingWorkerClient";
+import {
+  copyRoadRouteTerrain,
+  type RoadRouteInput,
+  type RoadRouteResult,
+} from "../generation/roadRouting";
 
 type Tool = "select"
   | `place:${typeof PLACE_TYPES[number]}`
   | `land:${typeof LAND_USE_TYPES[number]}`
   | "road"
+  | "route_road"
   | "hedgerow"
   | "prefab"
   | "frontage"
@@ -92,6 +109,19 @@ interface DragState {
   readonly vertexIndex: number | null;
 }
 
+interface RoadRouteEndpoint {
+  readonly point: PointTuple;
+  readonly snappedRoadId: string | null;
+}
+
+interface RoadRouteAuthoringSettings {
+  readonly roadClass: RoadClass;
+  readonly surface: RoadSurface;
+  readonly widthM: number;
+  readonly seed: number;
+  readonly routing: Omit<RoadRouteInput, "start" | "end">;
+}
+
 const TOOL_INSTRUCTIONS: Record<Tool, string> = {
   select: "Click to select. Drag a handle or whole object. Ctrl-click a selected road or hedgerow segment to insert a point.",
   "place:town": "Click town boundary vertices. Enter or double-click finishes; Backspace removes; Escape cancels.",
@@ -102,6 +132,7 @@ const TOOL_INSTRUCTIONS: Record<Tool, string> = {
   "land:rough_grazing": "Click rough-grazing vertices. Enter or double-click finishes; Backspace removes; Escape cancels.",
   "land:woodland": "Click woodland vertices. Enter or double-click finishes; Backspace removes; Escape cancels.",
   road: "Click ordered road control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
+  route_road: "Click a start and destination. Terrain-aware A* runs off the UI thread; review diagnostics, then accept the ordinary editable road.",
   hedgerow: "Click ordered hedgerow control points. Enter or double-click finishes; Backspace removes; Escape cancels.",
   prefab: "Placement is on. Choose a catalogue asset, then click repeatedly to place it. Click Place prefab again to return to Select.",
   frontage: "Click two points on the same road. Left and right are relative to the first click looking toward the second; review the preview, then generate.",
@@ -125,6 +156,20 @@ export class EditorApp {
   #frontageStart: FrontageAnchor | null = null;
   #frontageEnd: FrontageAnchor | null = null;
   #frontagePlan: FrontagePlan | null = null;
+  #settlementSurveyResult: SettlementSurveyResult | null = null;
+  readonly #settlementSurveySelected = new Set<string>();
+  #settlementSurveyTerrain: WorkingTerrain | null = null;
+  #settlementSurveyPlacesKey: string | null = null;
+  #settlementSurveyError: string | null = null;
+  #settlementSurveyInvalidated = false;
+  readonly #roadRouter = new RoadRoutingWorkerClient();
+  #roadRouteStart: RoadRouteEndpoint | null = null;
+  #roadRouteEnd: RoadRouteEndpoint | null = null;
+  #roadRouteResult: RoadRouteResult | null = null;
+  #roadRouteTerrain: WorkingTerrain | null = null;
+  #roadRouteRunning = false;
+  #roadRouteError: string | null = null;
+  #roadRouteInvalidated = false;
   #saveHandle: SaveFileHandle | null = null;
   #projectFileName = "project.scenery.json";
 
@@ -146,6 +191,7 @@ export class EditorApp {
   }
 
   public dispose(): void {
+    this.#roadRouter.dispose();
     this.#viewport.dispose();
   }
 
@@ -257,6 +303,52 @@ export class EditorApp {
     this.#elements.exportTerrainButton.addEventListener("click", () => { void this.#exportFinalTerrain(); });
     this.#elements.exportVegetationButton.addEventListener("click", () => this.#exportResampledVegetation());
     this.#elements.assetSelect.addEventListener("change", () => this.#assetSelectionChanged());
+    this.#elements.settlementProfile.addEventListener("change", () => this.#settlementProfileChanged());
+    for (const input of [
+      this.#elements.settlementCandidateCount,
+      this.#elements.settlementRadius,
+      this.#elements.settlementMaximumSlope,
+      this.#elements.settlementMinimumSeparation,
+      this.#elements.settlementEdgeClearance,
+      this.#elements.settlementPreferredElevation,
+      this.#elements.settlementSeed,
+      this.#elements.settlementAttemptBudget,
+    ]) {
+      input.addEventListener("input", () => this.#settlementSurveyInputChanged());
+    }
+    this.#elements.settlementUsePreferredElevation.addEventListener("change", () => {
+      this.#settlementSurveyInputChanged();
+      this.#renderSettlementSurveyControls();
+    });
+    this.#elements.runSettlementSurveyButton.addEventListener("click", () => this.#runSettlementSurvey());
+    this.#elements.acceptSettlementsButton.addEventListener("click", () => this.#acceptSurveyedSettlements());
+    this.#elements.clearSettlementSurveyButton.addEventListener("click", () => this.#clearSettlementSurvey(true));
+    this.#elements.settlementSurveyCandidates.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || input.dataset.surveyCandidate === undefined) return;
+      if (input.checked) this.#settlementSurveySelected.add(input.dataset.surveyCandidate);
+      else this.#settlementSurveySelected.delete(input.dataset.surveyCandidate);
+      this.#renderSettlementSurveyControls();
+      this.#syncProjection();
+    });
+    for (const input of [
+      this.#elements.routeRoadClass,
+      this.#elements.routeRoadSurface,
+      this.#elements.routeRoadWidth,
+      this.#elements.routeGridStep,
+      this.#elements.routeSlopeWeight,
+      this.#elements.routeMaximumGrade,
+      this.#elements.routeTurnPenalty,
+      this.#elements.routeEdgeClearance,
+      this.#elements.routeSeed,
+      this.#elements.routeSnapEndpoints,
+    ]) {
+      input.addEventListener(input instanceof HTMLInputElement && input.type !== "checkbox" ? "input" : "change", () => {
+        this.#roadRouteSettingsChanged();
+      });
+    }
+    this.#elements.acceptRoadRouteButton.addEventListener("click", () => this.#acceptRoadRoute());
+    this.#elements.clearRoadRouteButton.addEventListener("click", () => this.#clearRoadRoute(true));
     for (const input of this.#elements.frontageSideInputs) {
       input.addEventListener("change", () => this.#frontageOptionsChanged());
     }
@@ -586,6 +678,36 @@ export class EditorApp {
       this.#selectedId = null;
       this.#selectedVertex = null;
     }
+    if (state.terrain && state.terrain !== this.#activeBaseTerrain) {
+      this.#elements.settlementPreferredElevation.value = String(state.terrain.lowlandReferenceElevationM);
+      this.#elements.routeGridStep.value = String(Math.max(50, state.terrain.spacingM));
+    }
+    if (this.#settlementSurveyResult) {
+      const places = state.model?.list("place").filter((entity): entity is PlaceRegion => entity.kind === "place") ?? [];
+      const surveySourceChanged = state.workingTerrain !== this.#settlementSurveyTerrain
+        || settlementPlacesKey(places) !== this.#settlementSurveyPlacesKey;
+      if (surveySourceChanged) {
+        this.#settlementSurveyResult = null;
+        this.#settlementSurveySelected.clear();
+        this.#settlementSurveyTerrain = null;
+        this.#settlementSurveyPlacesKey = null;
+        this.#settlementSurveyError = null;
+        this.#settlementSurveyInvalidated = true;
+      }
+    }
+    if (
+      (this.#roadRouteStart || this.#roadRouteEnd || this.#roadRouteResult || this.#roadRouteRunning)
+      && state.workingTerrain !== this.#roadRouteTerrain
+    ) {
+      this.#roadRouter.cancel();
+      this.#roadRouteStart = null;
+      this.#roadRouteEnd = null;
+      this.#roadRouteResult = null;
+      this.#roadRouteTerrain = null;
+      this.#roadRouteRunning = false;
+      this.#roadRouteError = null;
+      this.#roadRouteInvalidated = true;
+    }
     const projectName = state.model?.name ?? "Scenery Editor";
     this.#elements.projectTitle.textContent = projectName;
     this.#elements.dirtyMarker.hidden = !state.dirty;
@@ -620,6 +742,8 @@ export class EditorApp {
       ? TOOL_INSTRUCTIONS[this.#tool]
       : "Create a terrain project to enable geometry authoring.";
     this.#elements.assetCatalogInput.disabled = !state.model;
+    this.#elements.settlementSurveyOptions.disabled = !state.model || !state.workingTerrain;
+    this.#elements.routeRoadOptions.disabled = !state.model || !state.workingTerrain;
     this.#elements.frontageOptions.disabled = !state.model || !frontageAvailable;
     this.#elements.vegetationTypeSelect.disabled = !state.model;
     this.#elements.vegetationAssetId.disabled = !state.model;
@@ -640,6 +764,8 @@ export class EditorApp {
       : "No county reference.";
     this.#recomputeFrontagePlan();
     this.#renderFrontageControls();
+    this.#renderSettlementSurveyControls();
+    this.#renderRoadRouteControls();
     this.#renderWarnings(state);
 
     if (state.terrain && state.workingTerrain && state.workingTerrain !== this.#activeTerrain) {
@@ -680,7 +806,17 @@ export class EditorApp {
       this.#frontageEnd = null;
       this.#frontagePlan = null;
     }
-    if (tool === "frontage") {
+    if (this.#tool === "route_road" || tool === "route_road") {
+      this.#roadRouter.cancel();
+      this.#roadRouteStart = null;
+      this.#roadRouteEnd = null;
+      this.#roadRouteResult = null;
+      this.#roadRouteTerrain = null;
+      this.#roadRouteRunning = false;
+      this.#roadRouteError = null;
+      this.#roadRouteInvalidated = false;
+    }
+    if (tool === "frontage" || tool === "route_road") {
       this.#selectedId = null;
       this.#selectedVertex = null;
     }
@@ -696,6 +832,7 @@ export class EditorApp {
     }
     this.#elements.toolInstructions.textContent = TOOL_INSTRUCTIONS[tool];
     this.#renderFrontageControls();
+    this.#renderRoadRouteControls();
     this.#viewport.setDrawingCursor(tool !== "select");
     this.#syncProjection();
   }
@@ -803,6 +940,10 @@ export class EditorApp {
       this.#frontageClick(clampPoint(intent.point, model.bounds));
       return;
     }
+    if (this.#tool === "route_road") {
+      this.#roadRouteClick(clampPoint(intent.point, model.bounds));
+      return;
+    }
     this.#draft.push(clampPoint(intent.point, model.bounds));
     this.#elements.statusMessage.textContent = `${String(this.#draft.length)} draft point${this.#draft.length === 1 ? "" : "s"} — Enter or double-click to finish`;
     this.#syncProjection();
@@ -810,7 +951,14 @@ export class EditorApp {
 
   #finishDraft(): void {
     const model = this.#store.state.model;
-    if (!model || this.#tool === "select" || this.#tool === "prefab" || this.#tool === "vegetation" || this.#tool === "frontage") return;
+    if (
+      !model
+      || this.#tool === "select"
+      || this.#tool === "prefab"
+      || this.#tool === "vegetation"
+      || this.#tool === "frontage"
+      || this.#tool === "route_road"
+    ) return;
     const points = dedupeDraft(this.#draft);
     const polygon = this.#tool.startsWith("place:") || this.#tool.startsWith("land:");
     const required = polygon ? 3 : 2;
@@ -928,6 +1076,213 @@ export class EditorApp {
     this.#store.addEntity(entity, `Place ${entity.name}`);
     this.#elements.statusMessage.textContent = `Placed ${entity.name} — vegetation placement remains on`;
     this.#renderInspector();
+  }
+
+  #settlementProfileChanged(): void {
+    const profileId = this.#elements.settlementProfile.value;
+    if (!isSettlementSurveyProfileId(profileId)) return;
+    const profile = settlementSurveyProfile(profileId);
+    this.#elements.settlementRadius.value = String(profile.radiusM);
+    this.#elements.settlementMaximumSlope.value = gradeToDegrees(profile.maximumGrade).toFixed(1);
+    this.#settlementSurveyInputChanged();
+  }
+
+  #settlementSurveyInputChanged(): void {
+    const hadFeedback = this.#settlementSurveyResult !== null || this.#settlementSurveyError !== null;
+    this.#settlementSurveyResult = null;
+    this.#settlementSurveySelected.clear();
+    this.#settlementSurveyTerrain = null;
+    this.#settlementSurveyPlacesKey = null;
+    this.#settlementSurveyError = null;
+    this.#settlementSurveyInvalidated = hadFeedback;
+    this.#renderSettlementSurveyControls();
+    this.#syncProjection();
+  }
+
+  #settlementSurveySettings(): SettlementSurveySettings | null {
+    const profileValue = this.#elements.settlementProfile.value;
+    const profile = isSettlementSurveyProfileId(profileValue) ? profileValue : null;
+    this.#elements.settlementProfile.setAttribute("aria-invalid", String(profile === null));
+    const desiredCount = surveyInputNumber(
+      this.#elements.settlementCandidateCount,
+      (value) => Number.isSafeInteger(value) && value >= 1 && value <= 100,
+    );
+    const radiusM = surveyInputNumber(this.#elements.settlementRadius, (value) => value > 0);
+    const maximumSlopeDeg = surveyInputNumber(
+      this.#elements.settlementMaximumSlope,
+      (value) => value > 0 && value < 90,
+    );
+    const minimumSeparationM = surveyInputNumber(
+      this.#elements.settlementMinimumSeparation,
+      (value) => value >= 0,
+    );
+    const edgeClearanceM = surveyInputNumber(
+      this.#elements.settlementEdgeClearance,
+      (value) => value >= 0,
+    );
+    const seed = surveyInputNumber(this.#elements.settlementSeed, Number.isSafeInteger);
+    const attemptBudget = surveyInputNumber(
+      this.#elements.settlementAttemptBudget,
+      (value) => Number.isSafeInteger(value) && value >= 1 && value <= 100_000,
+    );
+    const usePreferredElevation = this.#elements.settlementUsePreferredElevation.checked;
+    const preferredElevationM = usePreferredElevation
+      ? surveyInputNumber(this.#elements.settlementPreferredElevation, () => true)
+      : null;
+    if (!usePreferredElevation) this.#elements.settlementPreferredElevation.setAttribute("aria-invalid", "false");
+    if (
+      profile === null
+      || desiredCount === null
+      || radiusM === null
+      || maximumSlopeDeg === null
+      || minimumSeparationM === null
+      || edgeClearanceM === null
+      || seed === null
+      || attemptBudget === null
+      || (usePreferredElevation && preferredElevationM === null)
+    ) return null;
+    return {
+      profile,
+      desiredCount,
+      radiusM,
+      maximumSlopeDeg,
+      minimumSeparationM,
+      edgeClearanceM,
+      preferredElevationM,
+      seed,
+      attemptBudget,
+    };
+  }
+
+  #runSettlementSurvey(): void {
+    const { model, workingTerrain } = this.#store.state;
+    if (!model || !workingTerrain) return;
+    const settings = this.#settlementSurveySettings();
+    this.#settlementSurveyInvalidated = false;
+    this.#settlementSurveyError = null;
+    this.#settlementSurveyResult = null;
+    this.#settlementSurveySelected.clear();
+    if (!settings) {
+      this.#settlementSurveyError = "Correct the highlighted survey inputs before running.";
+      this.#renderSettlementSurveyControls();
+      this.#syncProjection();
+      return;
+    }
+    const places = model.list("place").filter((entity): entity is PlaceRegion => entity.kind === "place");
+    try {
+      this.#settlementSurveyResult = runSettlementSurvey(workingTerrain, places, settings);
+      this.#settlementSurveyTerrain = workingTerrain;
+      this.#settlementSurveyPlacesKey = settlementPlacesKey(places);
+      if (this.#settlementSurveyResult.status === "success") {
+        const first = this.#settlementSurveyResult.output.candidates[0];
+        if (first) this.#settlementSurveySelected.add(first.id);
+        const count = this.#settlementSurveyResult.output.candidates.length;
+        const partial = this.#settlementSurveyResult.output.attemptBudgetExhausted
+          ? ` of ${String(settings.desiredCount)} requested`
+          : "";
+        this.#elements.statusMessage.textContent = `Settlement survey found ${String(count)} ranked candidate${count === 1 ? "" : "s"}${partial} — preview only`;
+      } else {
+        this.#elements.statusMessage.textContent = `Settlement survey found no valid site in ${String(settings.attemptBudget)} attempts — project unchanged`;
+      }
+    } catch (error) {
+      this.#settlementSurveyTerrain = null;
+      this.#settlementSurveyPlacesKey = null;
+      this.#settlementSurveyError = error instanceof Error ? error.message : String(error);
+      this.#elements.statusMessage.textContent = `Settlement survey could not run — ${this.#settlementSurveyError}`;
+    }
+    this.#renderSettlementSurveyControls();
+    this.#syncProjection();
+  }
+
+  #renderSettlementSurveyControls(): void {
+    const model = this.#store.state.model;
+    const summary = this.#elements.settlementSurveySummary;
+    const usePreferredElevation = this.#elements.settlementUsePreferredElevation.checked;
+    this.#elements.settlementPreferredElevation.disabled = !model || !usePreferredElevation;
+    this.#elements.settlementPreferredElevation.closest("label")?.classList.toggle("is-disabled", !usePreferredElevation);
+    summary.classList.remove("has-preview", "has-warning", "has-error");
+    const settings = model ? this.#settlementSurveySettings() : null;
+    const result = this.#settlementSurveyResult;
+    if (!model) {
+      summary.textContent = "Create a terrain project to survey settlement sites.";
+    } else if (this.#settlementSurveyError) {
+      summary.textContent = this.#settlementSurveyError;
+      summary.classList.add("has-error");
+    } else if (!settings) {
+      summary.textContent = "Correct the highlighted survey inputs before running.";
+      summary.classList.add("has-error");
+    } else if (this.#settlementSurveyInvalidated) {
+      summary.textContent = "Survey inputs or source terrain changed; run the survey again.";
+      summary.classList.add("has-warning");
+    } else if (result?.status === "failure") {
+      const rejected = surveyRejectionText(result.rejections);
+      summary.textContent = `No valid sites after ${settings.attemptBudget.toLocaleString()} attempts${rejected ? ` · ${rejected}` : ""}. Project unchanged.`;
+      summary.classList.add("has-error");
+    } else if (result?.status === "success") {
+      const count = result.output.candidates.length;
+      const selected = this.#settlementSurveySelected.size;
+      summary.textContent = `${String(count)} ranked candidate${count === 1 ? "" : "s"} · ${String(selected)} selected${result.output.attemptBudgetExhausted ? ` · attempt budget exhausted before ${String(result.output.desiredCount)}` : ""}`;
+      summary.classList.add(result.output.attemptBudgetExhausted ? "has-warning" : "has-preview");
+    } else {
+      summary.textContent = "Run a deterministic survey over the current working terrain.";
+    }
+
+    const candidates = result?.status === "success" ? result.output.candidates : [];
+    this.#elements.settlementSurveyCandidates.innerHTML = candidates.map((candidate) => `
+      <label class="survey-candidate">
+        <input type="checkbox" data-survey-candidate="${escapeHtml(candidate.id)}" ${this.#settlementSurveySelected.has(candidate.id) ? "checked" : ""} />
+        <span class="survey-rank">#${String(candidate.rank)}</span>
+        <span><strong>${escapeHtml(labelFor(candidate.placeType))} · score ${candidate.score.toFixed(3)}</strong>
+          <small>${candidate.center[0].toFixed(0)} / ${candidate.center[1].toFixed(0)} m · slope ${candidate.maximumSlopeDeg.toFixed(2)}° · elev ${candidate.elevationM.toFixed(1)} m</small>
+        </span>
+      </label>`).join("");
+    this.#elements.acceptSettlementsButton.disabled = !model
+      || result?.status !== "success"
+      || this.#settlementSurveySelected.size === 0;
+    this.#elements.clearSettlementSurveyButton.disabled = result === null
+      && this.#settlementSurveyError === null
+      && !this.#settlementSurveyInvalidated;
+  }
+
+  #acceptSurveyedSettlements(): void {
+    const model = this.#store.state.model;
+    const result = this.#settlementSurveyResult;
+    if (!model || result?.status !== "success") return;
+    const candidates = result.output.candidates.filter((candidate) => this.#settlementSurveySelected.has(candidate.id));
+    if (candidates.length === 0) return;
+    const usedNames = new Set(model.all().map((entity) => entity.name));
+    const entities: PlaceRegion[] = candidates.map((candidate) => ({
+      kind: "place",
+      id: newEntityId(),
+      name: nextUniqueName(labelFor(candidate.placeType), usedNames),
+      visible: true,
+      locked: false,
+      place_type: candidate.placeType,
+      points: candidate.boundary,
+    }));
+    this.#settlementSurveyResult = null;
+    this.#settlementSurveySelected.clear();
+    this.#settlementSurveyTerrain = null;
+    this.#settlementSurveyPlacesKey = null;
+    this.#settlementSurveyError = null;
+    this.#settlementSurveyInvalidated = false;
+    this.#selectedId = entities.at(-1)?.id ?? null;
+    this.#selectedVertex = null;
+    const label = `Accept ${String(entities.length)} surveyed settlement${entities.length === 1 ? "" : "s"}`;
+    this.#store.addEntities(entities, label);
+    this.#elements.statusMessage.textContent = `Accepted ${String(entities.length)} surveyed settlement${entities.length === 1 ? "" : "s"} as one undoable edit`;
+  }
+
+  #clearSettlementSurvey(showStatus: boolean): void {
+    this.#settlementSurveyResult = null;
+    this.#settlementSurveySelected.clear();
+    this.#settlementSurveyTerrain = null;
+    this.#settlementSurveyPlacesKey = null;
+    this.#settlementSurveyError = null;
+    this.#settlementSurveyInvalidated = false;
+    if (showStatus) this.#elements.statusMessage.textContent = "Settlement survey preview cleared";
+    this.#renderSettlementSurveyControls();
+    this.#syncProjection();
   }
 
   #frontageClick(point: PointXZ): void {
@@ -1126,8 +1481,246 @@ export class EditorApp {
     this.#syncProjection();
   }
 
+  #roadRouteClick(point: PointXZ): void {
+    const { model, workingTerrain } = this.#store.state;
+    if (!model || !workingTerrain) return;
+    if (this.#roadRouteEnd || this.#roadRouteResult || this.#roadRouteRunning) {
+      this.#clearRoadRoute(false);
+    }
+    const endpoint = this.#resolveRoadRouteEndpoint(point);
+    if (!this.#roadRouteStart) {
+      this.#roadRouteStart = endpoint;
+      this.#roadRouteTerrain = workingTerrain;
+      this.#roadRouteInvalidated = false;
+      this.#elements.statusMessage.textContent = endpoint.snappedRoadId
+        ? "Route start snapped to a visible road — click the destination"
+        : "Route start set — click the destination";
+      this.#renderRoadRouteControls();
+      this.#syncProjection();
+      return;
+    }
+    this.#roadRouteEnd = endpoint;
+    this.#startRoadRoute();
+  }
+
+  #resolveRoadRouteEndpoint(point: PointXZ): RoadRouteEndpoint {
+    const model = this.#store.state.model;
+    if (!model || !this.#elements.routeSnapEndpoints.checked || !this.#elements.layerRoads.checked) {
+      return { point: [point.x, point.z], snappedRoadId: null };
+    }
+    const roads = model.list("road").filter((entity): entity is Road => entity.kind === "road");
+    const anchor = closestRoadAnchor(roads, point, this.#viewport.worldUnitsPerPixel() * 10);
+    return anchor
+      ? { point: anchor.point, snappedRoadId: anchor.roadId }
+      : { point: [point.x, point.z], snappedRoadId: null };
+  }
+
+  #roadRouteSettings(): RoadRouteAuthoringSettings | null {
+    const roadClassValue = this.#elements.routeRoadClass.value;
+    const surfaceValue = this.#elements.routeRoadSurface.value;
+    const roadClass = ROAD_CLASSES.includes(roadClassValue as RoadClass) ? roadClassValue as RoadClass : null;
+    const surface = ROAD_SURFACES.includes(surfaceValue as RoadSurface) ? surfaceValue as RoadSurface : null;
+    this.#elements.routeRoadClass.setAttribute("aria-invalid", String(roadClass === null));
+    this.#elements.routeRoadSurface.setAttribute("aria-invalid", String(surface === null));
+    const widthM = surveyInputNumber(this.#elements.routeRoadWidth, (value) => value > 0);
+    const gridStepM = surveyInputNumber(this.#elements.routeGridStep, (value) => value > 0);
+    const slopeWeight = surveyInputNumber(this.#elements.routeSlopeWeight, (value) => value >= 0);
+    const maximumGrade = surveyInputNumber(this.#elements.routeMaximumGrade, (value) => value > 0);
+    const turnPenaltyM = surveyInputNumber(this.#elements.routeTurnPenalty, (value) => value >= 0);
+    const edgeClearanceM = surveyInputNumber(this.#elements.routeEdgeClearance, (value) => value >= 0);
+    const seed = surveyInputNumber(this.#elements.routeSeed, Number.isSafeInteger);
+    if (
+      roadClass === null
+      || surface === null
+      || widthM === null
+      || gridStepM === null
+      || slopeWeight === null
+      || maximumGrade === null
+      || turnPenaltyM === null
+      || edgeClearanceM === null
+      || seed === null
+    ) return null;
+    return {
+      roadClass,
+      surface,
+      widthM,
+      seed,
+      routing: { gridStepM, slopeWeight, maximumGrade, turnPenaltyM, edgeClearanceM },
+    };
+  }
+
+  #startRoadRoute(): void {
+    const start = this.#roadRouteStart;
+    const end = this.#roadRouteEnd;
+    const terrain = this.#store.state.workingTerrain;
+    const settings = this.#roadRouteSettings();
+    this.#roadRouteResult = null;
+    this.#roadRouteError = null;
+    this.#roadRouteInvalidated = false;
+    if (!start || !end || !terrain) return;
+    if (!settings) {
+      this.#roadRouteError = "Correct the highlighted routing inputs, then click the destination again.";
+      this.#roadRouteEnd = null;
+      this.#renderRoadRouteControls();
+      this.#syncProjection();
+      return;
+    }
+    this.#roadRouteTerrain = terrain;
+    this.#roadRouteRunning = true;
+    this.#elements.statusMessage.textContent = "Routing road on the working terrain…";
+    this.#renderRoadRouteControls();
+    this.#syncProjection();
+    try {
+      this.#roadRouter.start(
+        { start: start.point, end: end.point, ...settings.routing },
+        settings.seed,
+        copyRoadRouteTerrain(terrain),
+        {
+          onResult: (result) => {
+            this.#roadRouteRunning = false;
+            this.#roadRouteResult = result;
+            this.#roadRouteError = null;
+            this.#elements.statusMessage.textContent = result.status === "success"
+              ? `Route ready — ${result.output.pathLengthM.toFixed(1)} m, ${(result.output.maximumGrade * 100).toFixed(1)}% maximum grade`
+              : `Road routing failed — ${result.diagnostics[0]?.message ?? result.reason}`;
+            this.#renderRoadRouteControls();
+            this.#syncProjection();
+          },
+          onError: (message) => {
+            this.#roadRouteRunning = false;
+            this.#roadRouteResult = null;
+            this.#roadRouteError = message;
+            this.#elements.statusMessage.textContent = `Road routing worker failed — ${message}`;
+            this.#renderRoadRouteControls();
+            this.#syncProjection();
+          },
+        },
+      );
+    } catch (error) {
+      this.#roadRouteRunning = false;
+      this.#roadRouteError = error instanceof Error ? error.message : String(error);
+      this.#renderRoadRouteControls();
+      this.#syncProjection();
+    }
+  }
+
+  #roadRouteSettingsChanged(): void {
+    const hadPreview = this.#roadRouteEnd !== null || this.#roadRouteResult !== null || this.#roadRouteRunning;
+    this.#roadRouter.cancel();
+    this.#roadRouteEnd = null;
+    this.#roadRouteResult = null;
+    this.#roadRouteRunning = false;
+    this.#roadRouteError = null;
+    this.#roadRouteInvalidated = hadPreview;
+    this.#renderRoadRouteControls();
+    this.#syncProjection();
+  }
+
+  #renderRoadRouteControls(): void {
+    const summary = this.#elements.routeSummary;
+    summary.classList.remove("has-preview", "has-warning", "has-error", "is-running");
+    const settings = this.#roadRouteSettings();
+    const result = this.#roadRouteResult;
+    if (!this.#store.state.model) {
+      summary.textContent = "Create a terrain project to begin.";
+    } else if (!settings) {
+      summary.textContent = "Correct the highlighted routing settings.";
+      summary.classList.add("has-error");
+    } else if (this.#roadRouteError) {
+      summary.textContent = this.#roadRouteError;
+      summary.classList.add("has-error");
+    } else if (this.#roadRouteRunning) {
+      summary.textContent = "Searching the transferred working-terrain snapshot… the editor remains interactive.";
+      summary.classList.add("is-running");
+    } else if (result?.status === "failure") {
+      const visited = result.metrics.find(({ name }) => name === "visited_nodes")?.value ?? 0;
+      const elapsed = result.metrics.find(({ name }) => name === "elapsed")?.value ?? 0;
+      summary.textContent = `${result.diagnostics[0]?.message ?? "No valid route."} · ${visited.toLocaleString()} nodes · ${elapsed.toFixed(1)} ms · project unchanged`;
+      summary.classList.add("has-error");
+    } else if (result?.status === "success") {
+      summary.textContent = `Route ready · ${result.output.pathLengthM.toFixed(1)} m · max ${(result.output.maximumGrade * 100).toFixed(1)}% · mean ${(result.output.meanGrade * 100).toFixed(1)}% · ${result.output.visitedNodes.toLocaleString()} nodes · cost ${result.output.cost.toFixed(1)} · ${result.output.elapsedMs.toFixed(1)} ms`;
+      summary.classList.add("has-preview");
+    } else if (this.#roadRouteStart) {
+      const road = this.#roadRouteStart.snappedRoadId
+        ? this.#store.state.model.get(this.#roadRouteStart.snappedRoadId)?.name
+        : null;
+      summary.textContent = this.#roadRouteInvalidated
+        ? `Settings changed; start retained${road ? ` on ${road}` : ""}. Click a new destination.`
+        : `Start set${road ? ` — snapped to ${road}` : ""}. Click the destination.`;
+      summary.classList.add(this.#roadRouteInvalidated ? "has-warning" : "has-preview");
+    } else if (this.#roadRouteInvalidated) {
+      summary.textContent = "The previous route was invalidated. Click a new start and destination.";
+      summary.classList.add("has-warning");
+    } else {
+      summary.textContent = this.#tool === "route_road"
+        ? "Click the route start, then its destination."
+        : "Turn on Route road, then click a start and destination.";
+    }
+    this.#elements.acceptRoadRouteButton.disabled = this.#tool !== "route_road"
+      || result?.status !== "success"
+      || this.#roadRouteTerrain !== this.#store.state.workingTerrain;
+    this.#elements.clearRoadRouteButton.disabled = !this.#roadRouteStart
+      && !this.#roadRouteEnd
+      && !this.#roadRouteResult
+      && !this.#roadRouteRunning
+      && !this.#roadRouteError;
+  }
+
+  #acceptRoadRoute(): void {
+    const model = this.#store.state.model;
+    const settings = this.#roadRouteSettings();
+    const result = this.#roadRouteResult;
+    if (!model || !settings || result?.status !== "success") return;
+    if (this.#roadRouteTerrain !== this.#store.state.workingTerrain) {
+      this.#roadRouteSettingsChanged();
+      return;
+    }
+    const entity: Road = {
+      kind: "road",
+      id: newEntityId(),
+      name: model.nextUniqueName("Road"),
+      visible: true,
+      locked: false,
+      points: result.output.points,
+      width_m: settings.widthM,
+      road_class: settings.roadClass,
+      surface: settings.surface,
+    };
+    this.#roadRouter.cancel();
+    this.#roadRouteStart = null;
+    this.#roadRouteEnd = null;
+    this.#roadRouteResult = null;
+    this.#roadRouteTerrain = null;
+    this.#roadRouteRunning = false;
+    this.#roadRouteError = null;
+    this.#roadRouteInvalidated = false;
+    this.#selectedId = entity.id;
+    this.#selectedVertex = null;
+    this.#store.addEntity(entity, `Create routed ${entity.name}`);
+    this.#setTool("select");
+    this.#elements.statusMessage.textContent = `Created ${entity.name} from the accepted terrain-aware route as one undoable edit`;
+    this.#renderInspector();
+  }
+
+  #clearRoadRoute(showStatus: boolean): void {
+    this.#roadRouter.cancel();
+    this.#roadRouteStart = null;
+    this.#roadRouteEnd = null;
+    this.#roadRouteResult = null;
+    this.#roadRouteTerrain = null;
+    this.#roadRouteRunning = false;
+    this.#roadRouteError = null;
+    this.#roadRouteInvalidated = false;
+    if (showStatus) this.#elements.statusMessage.textContent = "Road route preview cancelled — project unchanged";
+    this.#renderRoadRouteControls();
+    this.#syncProjection();
+  }
+
   #cancelInteraction(): void {
     const cancelledFrontage = this.#tool === "frontage" && this.#frontageStart !== null;
+    const cancelledSurvey = this.#settlementSurveyResult !== null;
+    const cancelledRoute = this.#tool === "route_road"
+      && (this.#roadRouteStart !== null || this.#roadRouteRunning || this.#roadRouteResult !== null);
     if (this.#drag) {
       this.#store.replaceLive(this.#drag.original);
       this.#drag = null;
@@ -1138,8 +1731,28 @@ export class EditorApp {
     this.#frontageStart = null;
     this.#frontageEnd = null;
     this.#frontagePlan = null;
-    this.#elements.statusMessage.textContent = cancelledFrontage ? "Frontage range cancelled — assist remains on" : "Draft cancelled";
+    this.#settlementSurveyResult = null;
+    this.#settlementSurveySelected.clear();
+    this.#settlementSurveyTerrain = null;
+    this.#settlementSurveyPlacesKey = null;
+    this.#settlementSurveyError = null;
+    this.#settlementSurveyInvalidated = false;
+    this.#roadRouter.cancel();
+    this.#roadRouteStart = null;
+    this.#roadRouteEnd = null;
+    this.#roadRouteResult = null;
+    this.#roadRouteTerrain = null;
+    this.#roadRouteRunning = false;
+    this.#roadRouteError = null;
+    this.#roadRouteInvalidated = false;
+    this.#elements.statusMessage.textContent = cancelledRoute
+      ? "Road route preview cancelled — route tool remains on"
+      : cancelledSurvey
+        ? "Settlement survey preview cancelled"
+        : cancelledFrontage ? "Frontage range cancelled — assist remains on" : "Draft cancelled";
     this.#renderFrontageControls();
+    this.#renderSettlementSurveyControls();
+    this.#renderRoadRouteControls();
     this.#syncProjection();
   }
 
@@ -1405,6 +2018,21 @@ export class EditorApp {
         ? { xM: this.#prefabGhost.x, zM: this.#prefabGhost.z, asset: selectedAsset }
         : null,
       this.#frontagePlan,
+      this.#settlementSurveyResult?.status === "success"
+        ? {
+          candidates: this.#settlementSurveyResult.output.candidates,
+          selectedIds: this.#settlementSurveySelected,
+        }
+        : null,
+      {
+        start: this.#roadRouteStart?.point ?? null,
+        end: this.#roadRouteEnd?.point ?? null,
+        points: this.#roadRouteResult?.status === "success" ? this.#roadRouteResult.output.points : null,
+        widthM: Number.isFinite(Number(this.#elements.routeRoadWidth.value))
+          ? Math.max(0.1, Number(this.#elements.routeRoadWidth.value))
+          : 7.5,
+        running: this.#roadRouteRunning,
+      },
       this.#store.state.countyReference,
       this.#store.state.vegetationReference,
       this.#referenceLayers(),
@@ -1510,6 +2138,7 @@ export class EditorApp {
   }
 
   #resetInteraction(): void {
+    this.#roadRouter.cancel();
     this.#selectedId = null;
     this.#selectedVertex = null;
     this.#draft = [];
@@ -1519,6 +2148,19 @@ export class EditorApp {
     this.#frontageStart = null;
     this.#frontageEnd = null;
     this.#frontagePlan = null;
+    this.#settlementSurveyResult = null;
+    this.#settlementSurveySelected.clear();
+    this.#settlementSurveyTerrain = null;
+    this.#settlementSurveyPlacesKey = null;
+    this.#settlementSurveyError = null;
+    this.#settlementSurveyInvalidated = false;
+    this.#roadRouteStart = null;
+    this.#roadRouteEnd = null;
+    this.#roadRouteResult = null;
+    this.#roadRouteTerrain = null;
+    this.#roadRouteRunning = false;
+    this.#roadRouteError = null;
+    this.#roadRouteInvalidated = false;
     this.#tool = "select";
   }
 
@@ -1761,6 +2403,7 @@ function optionalText(data: FormData, name: string): string | null {
 function isTool(value: string | undefined): value is Tool {
   return value === "select"
     || value === "road"
+    || value === "route_road"
     || value === "hedgerow"
     || value === "prefab"
     || value === "frontage"
@@ -1769,8 +2412,8 @@ function isTool(value: string | undefined): value is Tool {
     || LAND_USE_TYPES.some((kind) => value === `land:${kind}`);
 }
 
-function isToggleTool(tool: Tool): tool is "prefab" | "frontage" | "vegetation" {
-  return tool === "prefab" || tool === "frontage" || tool === "vegetation";
+function isToggleTool(tool: Tool): tool is "prefab" | "frontage" | "vegetation" | "route_road" {
+  return tool === "prefab" || tool === "frontage" || tool === "vegetation" || tool === "route_road";
 }
 
 function isFrontageSide(value: string | undefined): value is FrontageSide {
@@ -1808,6 +2451,28 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function formatMetres(value: number): string {
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} m`;
+}
+
+function isSettlementSurveyProfileId(value: string): value is SettlementSurveyProfileId {
+  return value === "town" || value === "village" || value === "hamlet" || value === "farm";
+}
+
+function surveyInputNumber(input: HTMLInputElement, valid: (value: number) => boolean): number | null {
+  const value = Number(input.value);
+  const accepted = input.value.trim().length > 0 && Number.isFinite(value) && valid(value);
+  input.setAttribute("aria-invalid", String(!accepted));
+  return accepted ? value : null;
+}
+
+function settlementPlacesKey(places: readonly PlaceRegion[]): string {
+  return JSON.stringify(places);
+}
+
+function surveyRejectionText(rejections: readonly { readonly reason: string; readonly count: number }[]): string {
+  return rejections
+    .filter(({ count }) => count > 0)
+    .map(({ reason, count }) => `${String(count)} ${labelFor(reason).toLowerCase()}`)
+    .join(", ");
 }
 
 function labelFor(value: string): string {

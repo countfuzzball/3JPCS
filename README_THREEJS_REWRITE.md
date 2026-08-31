@@ -1,7 +1,8 @@
 # Polygon County Scenery Editor — Three.js rewrite
 
 This is the **1.0.0 release** of the genuine static browser rewrite, completed through
-**Milestone 5** and the baked road-frontage house generator. The Python/Tkinter
+**Milestone 5**, the baked road-frontage house generator, and settlement-automation
+milestone **SA-3**. The Python/Tkinter
 application remains checked in under `python_reference/` as the behavioural and
 data-contract reference.
 
@@ -170,17 +171,40 @@ with a road, or leave the terrain world. Generation bakes ordinary editable pref
 records with the road UUID, disabled terrain pads, and one bulk undo command. Later
 road edits do not reposition them, and no project/runtime schema change is involved.
 
+Settlement-automation SA-2 adds a deterministic **Settlement survey** panel over the
+current working terrain. Town, village, hamlet-sized, and farm profiles seed editable
+radius and slope settings. Each proposed site samples the centre plus two fixed rings,
+hard-rejects excessive slope, world-edge, and existing-place conflicts, then ranks
+terrain roughness, edge preference, and optional lowland-reference elevation. Ranked
+regions remain transient and batched until selected candidates are accepted as normal
+unlocked 32-point place polygons in one undoable command. Changing settings, working
+terrain, or existing places invalidates the preview; no-result and exhausted-budget
+outcomes are explicit and non-destructive. No project/runtime schema changed.
+
+Settlement-automation SA-3 adds the toggleable **Route road** tool. The first click
+sets a start and the second sets a destination; either can snap to an existing visible
+native road. An eight-neighbour deterministic A* search runs in a Vite module Web
+Worker against a copied and transferred `WorkingTerrain` snapshot, leaving camera and
+editor interaction responsive. Grid size and visited-node budgets are explicit,
+maximum grade is impassable, and slope plus curvature affect cost. The simplified,
+smoothed result preserves its exact endpoints and is revalidated before a transient
+width preview appears. Length, maximum/mean grade, cost, visited nodes, elapsed time,
+and explicit failures are shown before mutation. Accepting creates one normal UUID
+road with the chosen current class, surface, and width in one undoable command;
+cancelled and stale worker results cannot apply. No project/runtime schema changed.
+
 The viewer-bundle export packages runtime scenery v3 plus any currently loaded
 resampled vegetation v1 and asset catalogue v3 into one compressed ZIP. A strict
 manifest v1 identifies each inner file and records absent optional entries as `null`;
 the inner schemas remain independent. Final terrain and actual asset resources remain
 separate exports.
 
-Future terrain settlement survey, A* road routing, and settlement-scale frontage work
-is specified as independently referable `SA-0` through `SA-5` milestones in
+The implemented survey and A* road routing plus the remaining settlement-scale
+frontage work are specified as independently referable `SA-0` through `SA-5`
+milestones in
 [`docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md`](docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md).
 
-The current verification baseline is 115 Vitest tests, 6 Playwright browser flows,
+The current verification baseline is 149 Vitest tests, 8 Playwright browser flows,
 and all 45 Python reference tests.
 
 ## Source-of-truth priority

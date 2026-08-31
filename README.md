@@ -8,7 +8,8 @@ This repository now contains two deliberately separate implementations:
   the completed Milestone 0–5 rewrite (application shell, terrain/native geometry,
   prefab/vegetation authoring, browser persistence and relinking, reference layers,
   versioned exports, and the full seeded performance benchmark), followed by a baked
-  road-frontage house generator.
+  road-frontage house generator, deterministic terrain settlement survey, and
+  worker-backed terrain-aware A* road routing.
 
 See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
 its verified commands, architecture, browser file limitations, and milestone status.
@@ -65,6 +66,12 @@ both editor and viewer; it is not duplicated into runtime scenery.
   type and logical species/asset ID, then use **Place vegetation**; `Q`/`E` rotates it.
 - A prefab's Properties panel controls terrain-pad enabled state, width, depth, and
   blend distance, or resets them to a disabled placement default.
+- **Settlement survey** ranks deterministic town, village, hamlet-sized, or farm sites
+  over the working terrain. Its previews are non-mutating; selected candidates bake as
+  ordinary editable 32-point place regions in one undoable action.
+- **Route road** snaps optional endpoints to visible native roads, searches a copied
+  working-terrain snapshot in a module worker, and previews route diagnostics before
+  baking one ordinary editable road in one undoable action.
 
 Prefab yaw uses `rotation_deg == 0` facing world north (`-Z`), with positive rotation
 clockwise from above. Terrain-pad width is local X and depth is local Z at zero yaw.
