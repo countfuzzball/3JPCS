@@ -1,0 +1,109 @@
+{
+  "fixture_version": 1,
+  "source_functions": ["WorldBuilder._plot_candidates", "WorldBuilder._near_junction", "WorldBuilder.generate_buildings"],
+  "compatibility": "legacy spacing, side, junction, and slope policy baseline",
+  "random": {
+    "implementation": "CPython random.Random",
+    "seed": 123,
+    "initial_random_unit": 0.052363598850944326
+  },
+  "settlement": {
+    "id": "settlement-test",
+    "legacy_kind": "village",
+    "center": [60, 0],
+    "radius_m": 100,
+    "style": "roadside"
+  },
+  "road": {
+    "id": "road-test",
+    "points": [[0, 0], [120, 0]],
+    "length_m": 120,
+    "width_m": 4,
+    "tangent_rad": 0
+  },
+  "spacing": {
+    "nominal_m": 23,
+    "initial_offset_base_m": 14,
+    "end_clearance_m": 12,
+    "increment_multiplier_range": [0.88, 1.2]
+  },
+  "junction": {
+    "id": "junction-test",
+    "point": [60, 0],
+    "radius_m": 5,
+    "candidate_margin_m": 12,
+    "comparison": "distance < radius + margin"
+  },
+  "sampled_anchors_before_final_shuffle": [
+    {
+      "distance_m": 15.20436277357172,
+      "point": [15.20436277357172, 0],
+      "junction_rejected": false,
+      "side_order": [1, -1],
+      "next_spacing_multiplier": 1.1260660443478625
+    },
+    {
+      "distance_m": 41.103881793572555,
+      "point": [41.103881793572555, 0],
+      "junction_rejected": false,
+      "side_order": [-1, 1],
+      "next_spacing_multiplier": 0.9144640751803005
+    },
+    {
+      "distance_m": 62.13655552271946,
+      "point": [62.13655552271946, 0],
+      "junction_rejected": true,
+      "side_order": [],
+      "next_spacing_multiplier": 1.1683836409445423
+    },
+    {
+      "distance_m": 89.00937926444394,
+      "point": [89.00937926444394, 0],
+      "junction_rejected": false,
+      "side_order": [1, -1],
+      "next_spacing_multiplier": 1.0013197863965082
+    }
+  ],
+  "candidates_before_final_shuffle": [
+    { "distance_m": 15.20436277357172, "side": 1 },
+    { "distance_m": 15.20436277357172, "side": -1 },
+    { "distance_m": 41.103881793572555, "side": -1 },
+    { "distance_m": 41.103881793572555, "side": 1 },
+    { "distance_m": 89.00937926444394, "side": 1 },
+    { "distance_m": 89.00937926444394, "side": -1 }
+  ],
+  "expected_candidates_after_final_shuffle": [
+    { "distance_m": 15.20436277357172, "side": -1 },
+    { "distance_m": 41.103881793572555, "side": 1 },
+    { "distance_m": 15.20436277357172, "side": 1 },
+    { "distance_m": 89.00937926444394, "side": -1 },
+    { "distance_m": 41.103881793572555, "side": -1 },
+    { "distance_m": 89.00937926444394, "side": 1 }
+  ],
+  "legacy_side_convention": {
+    "positive_side_serialized_as": "left",
+    "negative_side_serialized_as": "right",
+    "positive_side_normal_for_eastbound_road": [0, 1],
+    "target_editor_left_normal_for_eastbound_road": [0, -1]
+  },
+  "placement_stage_slope_checks": {
+    "span_m": 18,
+    "maximum_grade": 0.26,
+    "sites": [
+      {
+        "id": "gentle-site",
+        "candidate_distance_m": 41.103881793572555,
+        "proposed_center": [41.103881793572555, 10],
+        "measured_slope_grade": 0.1,
+        "expected": "accepted_by_slope_check"
+      },
+      {
+        "id": "steep-site",
+        "candidate_distance_m": 89.00937926444394,
+        "proposed_center": [89.00937926444394, 10],
+        "measured_slope_grade": 0.3,
+        "expected": "rejected_by_slope_check"
+      }
+    ]
+  }
+}

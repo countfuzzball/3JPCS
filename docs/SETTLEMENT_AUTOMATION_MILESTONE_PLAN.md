@@ -1,6 +1,6 @@
 # Settlement automation milestone plan
 
-Status: implementation plan; no settlement-automation milestone is implemented yet.
+Status: SA-0 implemented; SA-1 through SA-5 remain planned.
 
 This document defines the staged integration of terrain-based settlement surveying,
 A* road routing, and settlement-scale automatic frontage into the browser-based
@@ -119,6 +119,11 @@ SA-2 and SA-3 may be developed independently after SA-1, but SA-4 assumes reusab
 road geometry from SA-1 and route/road-selection behavior established by SA-3.
 
 ## SA-0 — Reference baseline and contract freeze
+
+Implementation record: the repository-owned fixtures and numerical/contract notes are
+in [`tests/fixtures/settlement-automation`](../tests/fixtures/settlement-automation/README.md),
+with executable consistency checks in
+[`tests/settlementAutomation/referenceBaseline.test.ts`](../tests/settlementAutomation/referenceBaseline.test.ts).
 
 ### Goal
 

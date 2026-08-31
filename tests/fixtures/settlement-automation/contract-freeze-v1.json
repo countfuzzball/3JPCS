@@ -1,0 +1,56 @@
+{
+  "fixture_version": 1,
+  "policy": "SA-0 through SA-5 do not change these contracts",
+  "contracts": {
+    "editable_project": {
+      "format": "polygon-county-scenery-project",
+      "schema_version": 4,
+      "schema_path": "src/schemas/scenery-project-v4.schema.json",
+      "schema_sha256": "d04afec684cfe5e00d37f40c9fdc28c3a550390099b404fd8583404de92fb42d"
+    },
+    "runtime_scenery": {
+      "format": "polygon-county-runtime-scenery",
+      "schema_version": 3,
+      "schema_path": "src/schemas/runtime-scenery-v3.schema.json",
+      "schema_sha256": "fbaffb70451dbb69ec9b6e887c77a80ec123c7a2d38b9535e8001c0da2a1dfc7"
+    },
+    "resampled_vegetation": {
+      "format": null,
+      "schema_version": 1,
+      "parser": "src/model/references.ts#parseVegetationReference",
+      "root_keys": ["schema_version", "project_id", "project_name", "coordinate_system", "generated_object_count", "objects"],
+      "object_keys": ["type", "model_or_species", "x_m", "z_m", "terrain_y_m", "rotation_deg", "scale", "source_region_id"],
+      "valid_document": {
+        "schema_version": 1,
+        "project_id": "11111111-1111-4111-8111-111111111111",
+        "project_name": "SA-0 contract fixture",
+        "coordinate_system": "X east/right, terrain Y elevation, Z south/down; metres",
+        "generated_object_count": 1,
+        "objects": [
+          {
+            "type": "forest_tree",
+            "model_or_species": "oak",
+            "x_m": 25,
+            "z_m": 35,
+            "terrain_y_m": 7,
+            "rotation_deg": 90,
+            "scale": 1,
+            "source_region_id": "22222222-2222-4222-8222-222222222222"
+          }
+        ]
+      }
+    },
+    "asset_catalog": {
+      "format": "polygon-county-asset-catalog",
+      "schema_version": 3,
+      "schema_path": "src/schemas/asset-catalog-v3.schema.json",
+      "schema_sha256": "bf72495fdc8c1652bbef789c489f8d2b93bd7baa1501746cc833f79be1996582"
+    },
+    "viewer_bundle_manifest": {
+      "format": "polygon-county-viewer-bundle",
+      "schema_version": 1,
+      "schema_path": "src/schemas/viewer-bundle-manifest-v1.schema.json",
+      "schema_sha256": "2b24b23f7c4c796dcaa59ef4281cb69813a635041c9b6718e7ca60e315d5e64c"
+    }
+  }
+}
