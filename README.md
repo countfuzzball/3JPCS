@@ -9,7 +9,8 @@ This repository now contains two deliberately separate implementations:
   prefab/vegetation authoring, browser persistence and relinking, reference layers,
   versioned exports, and the full seeded performance benchmark), followed by a baked
   road-frontage house generator, deterministic terrain settlement survey, and
-  worker-backed terrain-aware A* road routing.
+  worker-backed terrain-aware A* road routing, and deterministic settlement-wide
+  multi-road frontage population.
 
 See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
 its verified commands, architecture, browser file limitations, and milestone status.
@@ -72,6 +73,9 @@ both editor and viewer; it is not duplicated into runtime scenery.
 - **Route road** snaps optional endpoints to visible native roads, searches a copied
   working-terrain snapshot in a module worker, and previews route diagnostics before
   baking one ordinary editable road in one undoable action.
+- **Populate settlement** clips selected native roads to one selected place, previews
+  safe and skipped house footprints with junction/slope/collision diagnostics, and
+  bakes the accepted houses as ordinary editable prefabs in one undoable action.
 
 Prefab yaw uses `rotation_deg == 0` facing world north (`-Z`), with positive rotation
 clockwise from above. Terrain-pad width is local X and depth is local Z at zero yaw.

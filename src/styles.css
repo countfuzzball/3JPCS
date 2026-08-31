@@ -116,6 +116,16 @@ button { color: inherit; }
 .settlement-survey-summary.has-warning { border-left-color: var(--warning); color: #dfc08e; }
 .settlement-survey-summary.has-error { border-left-color: var(--error); color: #ffaaa2; }
 .settlement-survey-candidates { display: grid; gap: 4px; }
+.settlement-frontage-context { margin: 0; color: #778588; font-size: 8px; line-height: 1.45; }
+.settlement-frontage-road-heading { color: #829093; font-size: 8px; }
+.settlement-frontage-roads { display: grid; gap: 4px; max-height: 144px; overflow-y: auto; }
+.settlement-frontage-road { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 6px; align-items: start; padding: 6px; border: 1px solid #334144; background: #11191b; cursor: pointer; }
+.settlement-frontage-road:has(input:checked) { border-color: #667536; background: #1d2515; }
+.settlement-frontage-road input { width: 13px; height: 13px; margin: 1px 0 0; accent-color: var(--accent); }
+.settlement-frontage-road strong { display: block; color: #c9d3d5; font-size: 8px; }
+.settlement-frontage-road small { display: block; margin-top: 2px; color: #728083; font: 7px/1.4 ui-monospace, monospace; }
+.settlement-frontage-roads-empty { margin: 0; padding: 6px; border: 1px dashed #334144; color: #728083; font-size: 8px; }
+.settlement-frontage-summary.has-skips { border-left-color: var(--warning); color: #dfc08e; }
 .route-road-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .route-road-selects label { display: grid; gap: 3px; color: #829093; font-size: 8px; }
 .route-road-selects select { width: 100%; height: 28px; min-width: 0; padding: 0 5px; border: 1px solid #3b494c; border-radius: 2px; background: #0e1618; color: #dbe4e6; font: 8px ui-monospace, monospace; }

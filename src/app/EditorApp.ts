@@ -91,6 +91,13 @@ import {
   type RoadRouteInput,
   type RoadRouteResult,
 } from "../generation/roadRouting";
+import {
+  buildSettlementFrontagePlan,
+  settlementRoadEligibility,
+  type SettlementFrontagePlan,
+  type SettlementFrontageSettings,
+  type SettlementRoadEligibility,
+} from "../generation/settlementFrontage";
 
 type Tool = "select"
   | `place:${typeof PLACE_TYPES[number]}`
@@ -170,6 +177,14 @@ export class EditorApp {
   #roadRouteRunning = false;
   #roadRouteError: string | null = null;
   #roadRouteInvalidated = false;
+  #settlementFrontagePlan: SettlementFrontagePlan | null = null;
+  readonly #settlementFrontageRoadIds = new Set<string>();
+  #settlementFrontageRoadsCustomized = false;
+  #settlementFrontagePlaceId: string | null = null;
+  #settlementFrontageTerrain: WorkingTerrain | null = null;
+  #settlementFrontageSourceKey: string | null = null;
+  #settlementFrontageError: string | null = null;
+  #settlementFrontageInvalidated = false;
   #saveHandle: SaveFileHandle | null = null;
   #projectFileName = "project.scenery.json";
 
@@ -349,6 +364,26 @@ export class EditorApp {
     }
     this.#elements.acceptRoadRouteButton.addEventListener("click", () => this.#acceptRoadRoute());
     this.#elements.clearRoadRouteButton.addEventListener("click", () => this.#clearRoadRoute(true));
+    for (const input of [
+      this.#elements.settlementFrontageMaximumSlope,
+      this.#elements.settlementFrontageJunctionClearance,
+      this.#elements.settlementFrontageSpacingJitter,
+      this.#elements.settlementFrontageYawJitter,
+      this.#elements.settlementFrontageSeed,
+    ]) {
+      input.addEventListener("input", () => this.#settlementFrontageInputChanged());
+    }
+    this.#elements.settlementFrontageRoads.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || input.dataset.settlementRoad === undefined) return;
+      if (input.checked) this.#settlementFrontageRoadIds.add(input.dataset.settlementRoad);
+      else this.#settlementFrontageRoadIds.delete(input.dataset.settlementRoad);
+      this.#settlementFrontageRoadsCustomized = true;
+      this.#settlementFrontageInputChanged();
+    });
+    this.#elements.populateSettlementButton.addEventListener("click", () => this.#populateSettlement());
+    this.#elements.generateSettlementFrontageButton.addEventListener("click", () => this.#generateSettlementFrontage());
+    this.#elements.clearSettlementFrontageButton.addEventListener("click", () => this.#clearSettlementFrontage(true));
     for (const input of this.#elements.frontageSideInputs) {
       input.addEventListener("change", () => this.#frontageOptionsChanged());
     }
@@ -708,6 +743,11 @@ export class EditorApp {
       this.#roadRouteError = null;
       this.#roadRouteInvalidated = true;
     }
+    if (this.#settlementFrontagePlan) {
+      const sourceChanged = state.workingTerrain !== this.#settlementFrontageTerrain
+        || this.#settlementFrontageCurrentSourceKey() !== this.#settlementFrontageSourceKey;
+      if (sourceChanged) this.#invalidateSettlementFrontage();
+    }
     const projectName = state.model?.name ?? "Scenery Editor";
     this.#elements.projectTitle.textContent = projectName;
     this.#elements.dirtyMarker.hidden = !state.dirty;
@@ -744,6 +784,7 @@ export class EditorApp {
     this.#elements.assetCatalogInput.disabled = !state.model;
     this.#elements.settlementSurveyOptions.disabled = !state.model || !state.workingTerrain;
     this.#elements.routeRoadOptions.disabled = !state.model || !state.workingTerrain;
+    this.#elements.settlementFrontageOptions.disabled = !state.model || !state.workingTerrain;
     this.#elements.frontageOptions.disabled = !state.model || !frontageAvailable;
     this.#elements.vegetationTypeSelect.disabled = !state.model;
     this.#elements.vegetationAssetId.disabled = !state.model;
@@ -766,6 +807,7 @@ export class EditorApp {
     this.#renderFrontageControls();
     this.#renderSettlementSurveyControls();
     this.#renderRoadRouteControls();
+    this.#renderSettlementFrontageControls();
     this.#renderWarnings(state);
 
     if (state.terrain && state.workingTerrain && state.workingTerrain !== this.#activeTerrain) {
@@ -1322,6 +1364,7 @@ export class EditorApp {
   }
 
   #assetSelectionChanged(): void {
+    this.#invalidateSettlementFrontage();
     const asset = this.#selectedAsset();
     const hasRoad = (this.#store.state.model?.list("road").length ?? 0) > 0;
     const frontageAvailable = asset?.category === "house" && hasRoad;
@@ -1335,12 +1378,15 @@ export class EditorApp {
     }
     this.#recomputeFrontagePlan();
     this.#renderFrontageControls();
+    this.#renderSettlementFrontageControls();
     this.#syncProjection();
   }
 
   #frontageOptionsChanged(): void {
+    this.#invalidateSettlementFrontage();
     this.#recomputeFrontagePlan();
     this.#renderFrontageControls();
+    this.#renderSettlementFrontageControls();
     this.#syncProjection();
   }
 
@@ -1478,6 +1524,277 @@ export class EditorApp {
     this.#frontagePlan = null;
     if (showStatus) this.#elements.statusMessage.textContent = "Frontage range cleared";
     this.#renderFrontageControls();
+    this.#syncProjection();
+  }
+
+  #selectedSettlement(): PlaceRegion | null {
+    const selected = this.#selectedId ? this.#store.state.model?.get(this.#selectedId) : undefined;
+    return selected?.kind === "place" ? selected : null;
+  }
+
+  #settlementFrontageEligibility(settlement: PlaceRegion): readonly SettlementRoadEligibility[] {
+    const model = this.#store.state.model;
+    if (!model) return [];
+    const roads = model.list("road").filter((entity): entity is Road => entity.kind === "road");
+    return settlementRoadEligibility(settlement, roads, model.bounds);
+  }
+
+  #syncSettlementFrontageContext(
+    settlement: PlaceRegion | null,
+    eligibility: readonly SettlementRoadEligibility[],
+  ): void {
+    const placeId = settlement?.id ?? null;
+    if (placeId !== this.#settlementFrontagePlaceId) {
+      this.#invalidateSettlementFrontage();
+      this.#settlementFrontagePlaceId = placeId;
+      this.#settlementFrontageRoadIds.clear();
+      this.#settlementFrontageRoadsCustomized = false;
+    }
+    const eligibleIds = new Set(eligibility.map(({ road }) => road.id));
+    if (!this.#settlementFrontageRoadsCustomized) {
+      this.#settlementFrontageRoadIds.clear();
+      for (const { road } of eligibility) {
+        if (road.visible) this.#settlementFrontageRoadIds.add(road.id);
+      }
+    } else {
+      for (const id of this.#settlementFrontageRoadIds) {
+        if (!eligibleIds.has(id)) this.#settlementFrontageRoadIds.delete(id);
+      }
+    }
+  }
+
+  #settlementFrontageSettings(): SettlementFrontageSettings | null {
+    const frontage = this.#frontageSettings();
+    const maximumPlotSlopeDeg = surveyInputNumber(
+      this.#elements.settlementFrontageMaximumSlope,
+      (value) => value > 0 && value < 90,
+    );
+    const junctionClearanceM = surveyInputNumber(
+      this.#elements.settlementFrontageJunctionClearance,
+      (value) => value >= 0,
+    );
+    const spacingJitterM = surveyInputNumber(
+      this.#elements.settlementFrontageSpacingJitter,
+      (value) => value >= 0,
+    );
+    const yawJitterDeg = surveyInputNumber(
+      this.#elements.settlementFrontageYawJitter,
+      (value) => value >= 0 && value <= 180,
+    );
+    const seed = surveyInputNumber(this.#elements.settlementFrontageSeed, Number.isSafeInteger);
+    if (
+      !frontage
+      || maximumPlotSlopeDeg === null
+      || junctionClearanceM === null
+      || spacingJitterM === null
+      || yawJitterDeg === null
+      || seed === null
+    ) return null;
+    return {
+      ...frontage,
+      maximumPlotSlopeDeg,
+      junctionClearanceM,
+      spacingJitterM,
+      yawJitterDeg,
+      seed,
+    };
+  }
+
+  #settlementFrontageInputChanged(): void {
+    this.#invalidateSettlementFrontage();
+    this.#renderSettlementFrontageControls();
+    this.#syncProjection();
+  }
+
+  #invalidateSettlementFrontage(): void {
+    const hadPreview = this.#settlementFrontagePlan !== null;
+    this.#settlementFrontagePlan = null;
+    this.#settlementFrontageTerrain = null;
+    this.#settlementFrontageSourceKey = null;
+    this.#settlementFrontageError = null;
+    this.#settlementFrontageInvalidated ||= hadPreview;
+  }
+
+  #settlementFrontageCurrentSourceKey(): string | null {
+    const model = this.#store.state.model;
+    const settlement = this.#selectedSettlement();
+    const asset = this.#selectedAsset();
+    if (!model || !settlement || asset?.category !== "house") return null;
+    const roads = model.list("road").filter((entity): entity is Road => entity.kind === "road");
+    return JSON.stringify({
+      bounds: model.bounds,
+      settlement,
+      eligibleRoadIds: [...this.#settlementFrontageRoadIds].sort(),
+      roads,
+      prefabs: model.prefabInstances(),
+      asset,
+      proxy: prefabProxySize({ category: asset.category, scale: 1 }, this.#store.state.assetCatalog),
+    });
+  }
+
+  #populateSettlement(): void {
+    const { model, workingTerrain, assetCatalog } = this.#store.state;
+    const settlement = this.#selectedSettlement();
+    const asset = this.#selectedAsset();
+    const settings = this.#settlementFrontageSettings();
+    this.#settlementFrontagePlan = null;
+    this.#settlementFrontageTerrain = null;
+    this.#settlementFrontageSourceKey = null;
+    this.#settlementFrontageError = null;
+    this.#settlementFrontageInvalidated = false;
+    if (!model || !workingTerrain || !settlement || asset?.category !== "house" || !settings) {
+      this.#settlementFrontageError = "Select a place and house asset, then correct the highlighted population settings.";
+    } else if (this.#settlementFrontageRoadIds.size === 0) {
+      this.#settlementFrontageError = "Select at least one road that intersects the settlement.";
+    } else {
+      try {
+        const roads = model.list("road").filter((entity): entity is Road => entity.kind === "road");
+        const proxy = prefabProxySize({ category: asset.category, scale: 1 }, assetCatalog);
+        this.#settlementFrontagePlan = buildSettlementFrontagePlan({
+          settlement,
+          eligibleRoadIds: [...this.#settlementFrontageRoadIds],
+          roads,
+          proxy,
+          settings,
+          world: model.bounds,
+          prefabs: model.prefabInstances(),
+          catalog: assetCatalog,
+          terrain: workingTerrain,
+        });
+        this.#settlementFrontageTerrain = workingTerrain;
+        this.#settlementFrontageSourceKey = this.#settlementFrontageCurrentSourceKey();
+        const accepted = this.#settlementFrontagePlan.acceptedCount;
+        const skipped = this.#settlementFrontagePlan.candidates.length - accepted;
+        this.#elements.statusMessage.textContent = accepted > 0
+          ? `Settlement preview ready — ${accepted.toLocaleString()} house${accepted === 1 ? "" : "s"}${skipped > 0 ? `, ${skipped.toLocaleString()} skipped` : ""}`
+          : `Settlement preview produced no safe houses — ${skipped.toLocaleString()} candidate${skipped === 1 ? "" : "s"} skipped; project unchanged`;
+      } catch (error) {
+        this.#settlementFrontageError = error instanceof Error ? error.message : String(error);
+        this.#elements.statusMessage.textContent = `Settlement population could not run — ${this.#settlementFrontageError}`;
+      }
+    }
+    this.#renderSettlementFrontageControls();
+    this.#syncProjection();
+  }
+
+  #renderSettlementFrontageControls(): void {
+    const model = this.#store.state.model;
+    const terrain = this.#store.state.workingTerrain;
+    const settlement = this.#selectedSettlement();
+    const asset = this.#selectedAsset();
+    const eligibility = settlement ? this.#settlementFrontageEligibility(settlement) : [];
+    this.#syncSettlementFrontageContext(settlement, eligibility);
+    const settings = this.#settlementFrontageSettings();
+    const summary = this.#elements.settlementFrontageSummary;
+    summary.classList.remove("has-preview", "has-warning", "has-error", "has-skips");
+    this.#elements.settlementFrontageRoads.innerHTML = eligibility.length === 0
+      ? `<p class="settlement-frontage-roads-empty">${settlement ? "No native road intersects this place." : "Select a place to list its intersecting roads."}</p>`
+      : eligibility.map(({ road, ranges, totalRangeLengthM }) => `
+        <label class="settlement-frontage-road">
+          <input type="checkbox" data-settlement-road="${escapeHtml(road.id)}" ${this.#settlementFrontageRoadIds.has(road.id) ? "checked" : ""} />
+          <span><strong>${escapeHtml(road.name)}</strong><small>${ranges.length.toLocaleString()} clipped range${ranges.length === 1 ? "" : "s"} · ${totalRangeLengthM.toFixed(1)} m · ${road.visible ? "visible" : "hidden"}</small></span>
+        </label>`).join("");
+
+    const plan = this.#settlementFrontagePlan;
+    if (!model || !terrain) {
+      summary.textContent = "Create a terrain project to populate a settlement.";
+    } else if (!settlement) {
+      summary.textContent = "Select an editable place region to populate.";
+    } else if (asset?.category !== "house") {
+      summary.textContent = "Select a house asset from the catalogue.";
+    } else if (eligibility.length === 0) {
+      summary.textContent = "No native road intersects the selected place; project unchanged.";
+      summary.classList.add("has-warning");
+    } else if (this.#settlementFrontageRoadIds.size === 0) {
+      summary.textContent = "Choose at least one intersecting road.";
+      summary.classList.add("has-warning");
+    } else if (!settings) {
+      summary.textContent = "Correct the highlighted frontage and population settings.";
+      summary.classList.add("has-error");
+    } else if (this.#settlementFrontageError) {
+      summary.textContent = this.#settlementFrontageError;
+      summary.classList.add("has-error");
+    } else if (plan) {
+      const skippedCount = plan.candidates.length - plan.acceptedCount;
+      const reasons = settlementFrontageSkipText(plan);
+      summary.textContent = `${plan.acceptedCount.toLocaleString()} ready · ${plan.candidates.length.toLocaleString()} evaluated · ${plan.ranges.length.toLocaleString()} clipped road range${plan.ranges.length === 1 ? "" : "s"} · ${plan.junctions.length.toLocaleString()} junction${plan.junctions.length === 1 ? "" : "s"}${skippedCount > 0 ? ` · ${skippedCount.toLocaleString()} skipped (${reasons})` : ""}`;
+      summary.classList.add(skippedCount > 0 ? "has-skips" : "has-preview");
+    } else if (this.#settlementFrontageInvalidated) {
+      summary.textContent = "The previous population preview was invalidated; populate the settlement again.";
+      summary.classList.add("has-warning");
+    } else {
+      summary.textContent = `${settlement.name} · ${this.#settlementFrontageRoadIds.size.toLocaleString()} of ${eligibility.length.toLocaleString()} intersecting roads selected · ${labelFor(settings.side)} side`;
+    }
+
+    this.#elements.populateSettlementButton.disabled = !model
+      || !terrain
+      || !settlement
+      || asset?.category !== "house"
+      || eligibility.length === 0
+      || this.#settlementFrontageRoadIds.size === 0
+      || !settings;
+    this.#elements.generateSettlementFrontageButton.disabled = !plan
+      || plan.acceptedCount === 0
+      || this.#settlementFrontageTerrain !== terrain
+      || this.#settlementFrontageCurrentSourceKey() !== this.#settlementFrontageSourceKey;
+    this.#elements.clearSettlementFrontageButton.disabled = !plan
+      && !this.#settlementFrontageError
+      && !this.#settlementFrontageInvalidated;
+  }
+
+  #generateSettlementFrontage(): void {
+    const model = this.#store.state.model;
+    const asset = this.#selectedAsset();
+    const settlement = this.#selectedSettlement();
+    const plan = this.#settlementFrontagePlan;
+    if (!model || asset?.category !== "house" || !settlement || !plan) return;
+    if (
+      this.#settlementFrontageTerrain !== this.#store.state.workingTerrain
+      || this.#settlementFrontageCurrentSourceKey() !== this.#settlementFrontageSourceKey
+    ) {
+      this.#invalidateSettlementFrontage();
+      this.#renderSettlementFrontageControls();
+      this.#syncProjection();
+      return;
+    }
+    const candidates = plan.candidates.filter(({ skipReason }) => skipReason === null);
+    if (candidates.length === 0) return;
+    const usedNames = new Set(model.all().map((entity) => entity.name));
+    const entities: PrefabInstance[] = candidates.map((candidate) => ({
+      kind: "prefab",
+      id: newEntityId(),
+      name: nextUniqueName(asset.display_name, usedNames),
+      visible: true,
+      locked: false,
+      category: asset.category,
+      asset_id: asset.asset_id,
+      x_m: candidate.xM,
+      z_m: candidate.zM,
+      rotation_deg: candidate.rotationDeg,
+      scale: 1,
+      frontage_road_id: candidate.roadId,
+      terrain_pad: { ...DEFAULT_TERRAIN_PAD, enabled: false },
+    }));
+    const skippedCount = plan.candidates.length - plan.acceptedCount;
+    this.#settlementFrontagePlan = null;
+    this.#settlementFrontageTerrain = null;
+    this.#settlementFrontageSourceKey = null;
+    this.#settlementFrontageError = null;
+    this.#settlementFrontageInvalidated = false;
+    this.#selectedId = entities.at(-1)?.id ?? null;
+    this.#selectedVertex = null;
+    this.#store.addEntities(entities, `Populate ${settlement.name} with ${String(entities.length)} houses`);
+    this.#elements.statusMessage.textContent = `Generated ${entities.length.toLocaleString()} settlement house${entities.length === 1 ? "" : "s"} as one undoable edit${skippedCount > 0 ? ` · skipped ${skippedCount.toLocaleString()}` : ""}`;
+  }
+
+  #clearSettlementFrontage(showStatus: boolean): void {
+    this.#settlementFrontagePlan = null;
+    this.#settlementFrontageTerrain = null;
+    this.#settlementFrontageSourceKey = null;
+    this.#settlementFrontageError = null;
+    this.#settlementFrontageInvalidated = false;
+    if (showStatus) this.#elements.statusMessage.textContent = "Settlement population preview cleared — project unchanged";
+    this.#renderSettlementFrontageControls();
     this.#syncProjection();
   }
 
@@ -1721,6 +2038,7 @@ export class EditorApp {
     const cancelledSurvey = this.#settlementSurveyResult !== null;
     const cancelledRoute = this.#tool === "route_road"
       && (this.#roadRouteStart !== null || this.#roadRouteRunning || this.#roadRouteResult !== null);
+    const cancelledSettlementFrontage = this.#settlementFrontagePlan !== null;
     if (this.#drag) {
       this.#store.replaceLive(this.#drag.original);
       this.#drag = null;
@@ -1745,14 +2063,22 @@ export class EditorApp {
     this.#roadRouteRunning = false;
     this.#roadRouteError = null;
     this.#roadRouteInvalidated = false;
+    this.#settlementFrontagePlan = null;
+    this.#settlementFrontageTerrain = null;
+    this.#settlementFrontageSourceKey = null;
+    this.#settlementFrontageError = null;
+    this.#settlementFrontageInvalidated = false;
     this.#elements.statusMessage.textContent = cancelledRoute
       ? "Road route preview cancelled — route tool remains on"
+      : cancelledSettlementFrontage
+        ? "Settlement population preview cancelled — project unchanged"
       : cancelledSurvey
         ? "Settlement survey preview cancelled"
         : cancelledFrontage ? "Frontage range cancelled — assist remains on" : "Draft cancelled";
     this.#renderFrontageControls();
     this.#renderSettlementSurveyControls();
     this.#renderRoadRouteControls();
+    this.#renderSettlementFrontageControls();
     this.#syncProjection();
   }
 
@@ -1996,6 +2322,7 @@ export class EditorApp {
   }
 
   #renderInteraction(): void {
+    this.#renderSettlementFrontageControls();
     this.#syncProjection();
     this.#renderInspector();
   }
@@ -2033,6 +2360,7 @@ export class EditorApp {
           : 7.5,
         running: this.#roadRouteRunning,
       },
+      this.#settlementFrontagePlan,
       this.#store.state.countyReference,
       this.#store.state.vegetationReference,
       this.#referenceLayers(),
@@ -2161,6 +2489,14 @@ export class EditorApp {
     this.#roadRouteRunning = false;
     this.#roadRouteError = null;
     this.#roadRouteInvalidated = false;
+    this.#settlementFrontagePlan = null;
+    this.#settlementFrontageRoadIds.clear();
+    this.#settlementFrontageRoadsCustomized = false;
+    this.#settlementFrontagePlaceId = null;
+    this.#settlementFrontageTerrain = null;
+    this.#settlementFrontageSourceKey = null;
+    this.#settlementFrontageError = null;
+    this.#settlementFrontageInvalidated = false;
     this.#tool = "select";
   }
 
@@ -2472,6 +2808,21 @@ function surveyRejectionText(rejections: readonly { readonly reason: string; rea
   return rejections
     .filter(({ count }) => count > 0)
     .map(({ reason, count }) => `${String(count)} ${labelFor(reason).toLowerCase()}`)
+    .join(", ");
+}
+
+function settlementFrontageSkipText(plan: SettlementFrontagePlan): string {
+  const labels: Readonly<Record<keyof SettlementFrontagePlan["skipped"], string>> = {
+    outside_settlement: "outside settlement",
+    outside_world: "outside world",
+    prefab_overlap: "prefab overlap",
+    road_clash: "road clash",
+    junction_clearance: "junction clearance",
+    excessive_plot_slope: "excessive slope",
+  };
+  return Object.entries(plan.skipped)
+    .filter(([, count]) => count > 0)
+    .map(([reason, count]) => `${String(count)} ${labels[reason as keyof typeof labels]}`)
     .join(", ");
 }
 

@@ -2,7 +2,7 @@
 
 This is the **1.0.0 release** of the genuine static browser rewrite, completed through
 **Milestone 5**, the baked road-frontage house generator, and settlement-automation
-milestone **SA-3**. The Python/Tkinter
+milestone **SA-4**. The Python/Tkinter
 application remains checked in under `python_reference/` as the behavioural and
 data-contract reference.
 
@@ -193,18 +193,34 @@ and explicit failures are shown before mutation. Accepting creates one normal UU
 road with the chosen current class, surface, and width in one undoable command;
 cancelled and stale worker results cannot apply. No project/runtime schema changed.
 
+Settlement-automation SA-4 adds **Populate settlement** for one selected editable
+place and house asset. Every native road/polygon intersection becomes an individually
+selectable clipped range, with visible intersecting roads selected by default.
+Deterministic base spacing is generalized across all enabled ranges before optional
+seeded spacing/yaw jitter. The preview uses road control-point order for Left/Right,
+detects transient multi-road junctions, samples terrain slope at each house centre and
+footprint corners, and reports outside-settlement, outside-world, existing/generated
+prefab overlap, all-road clash, junction-clearance, and excessive-slope skips.
+Accepted and skipped footprints, clipped ranges, and junction points use four batched
+Three.js draw objects. Previewing never mutates the project; changed selections,
+settings, terrain, roads, prefabs, or asset data invalidate it. **Generate houses**
+bakes every accepted candidate as an ordinary unlocked prefab with scale 1, its
+serving road UUID, and a disabled terrain pad in one undoable command. Save/reopen and
+redo use the existing project model with no project or runtime schema change, while
+the original two-click frontage assistant remains available.
+
 The viewer-bundle export packages runtime scenery v3 plus any currently loaded
 resampled vegetation v1 and asset catalogue v3 into one compressed ZIP. A strict
 manifest v1 identifies each inner file and records absent optional entries as `null`;
 the inner schemas remain independent. Final terrain and actual asset resources remain
 separate exports.
 
-The implemented survey and A* road routing plus the remaining settlement-scale
-frontage work are specified as independently referable `SA-0` through `SA-5`
+The implemented survey, A* road routing, and settlement-scale frontage plus the
+remaining integrated workflow are specified as independently referable `SA-0` through `SA-5`
 milestones in
 [`docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md`](docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md).
 
-The current verification baseline is 149 Vitest tests, 8 Playwright browser flows,
+The current verification baseline is 156 Vitest tests, 9 Playwright browser flows,
 and all 45 Python reference tests.
 
 ## Source-of-truth priority

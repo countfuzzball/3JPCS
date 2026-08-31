@@ -176,7 +176,7 @@ function validateInputs(
   }
 }
 
-function footprintClashesWithRoad(footprint: readonly PointTuple[], road: Road): boolean {
+export function footprintClashesWithRoad(footprint: readonly PointTuple[], road: Road): boolean {
   const clearanceM = road.width_m / 2;
   for (let index = 0; index < road.points.length - 1; index += 1) {
     const start = road.points[index];

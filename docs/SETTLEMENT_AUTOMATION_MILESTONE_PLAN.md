@@ -1,6 +1,6 @@
 # Settlement automation milestone plan
 
-Status: SA-0 through SA-3 implemented; SA-4 and SA-5 remain planned.
+Status: SA-0 through SA-4 implemented; SA-5 remains planned.
 
 This document defines the staged integration of terrain-based settlement surveying,
 A* road routing, and settlement-scale automatic frontage into the browser-based
@@ -348,6 +348,22 @@ cost rather than a straight chord.
 - A browser test confirms that the UI remains usable during a representative route.
 
 ## SA-4 — Settlement-scale automatic frontage
+
+Implementation record: deterministic polygon clipping, multi-road range planning,
+transient junction detection, seeded post-spacing jitter, centre/corner slope checks,
+and staged collision/skip accounting are in
+[`src/generation/settlementFrontage.ts`](../src/generation/settlementFrontage.ts). The
+selected-place road list, shared frontage inputs, preview invalidation, diagnostics,
+and one-command prefab generation live in
+[`src/app/EditorApp.ts`](../src/app/EditorApp.ts). Accepted/skipped footprints, clipped
+road ranges, and junctions are drawn in four batched objects by
+[`src/rendering/SettlementFrontageRenderAdapter.ts`](../src/rendering/SettlementFrontageRenderAdapter.ts).
+Algorithm coverage is in
+[`tests/generation/settlementFrontage.test.ts`](../tests/generation/settlementFrontage.test.ts),
+with renderer disposal coverage in
+[`tests/rendering/SettlementFrontageRenderAdapter.test.ts`](../tests/rendering/SettlementFrontageRenderAdapter.test.ts)
+and the production-browser preview/generate/undo/save/reopen flow in
+[`tests/browser/settlement-frontage.spec.ts`](../tests/browser/settlement-frontage.spec.ts).
 
 ### Goal
 

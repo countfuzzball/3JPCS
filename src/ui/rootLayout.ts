@@ -38,6 +38,17 @@ export interface EditorElements {
   readonly routeSummary: HTMLElement;
   readonly acceptRoadRouteButton: HTMLButtonElement;
   readonly clearRoadRouteButton: HTMLButtonElement;
+  readonly settlementFrontageOptions: HTMLFieldSetElement;
+  readonly settlementFrontageRoads: HTMLElement;
+  readonly settlementFrontageMaximumSlope: HTMLInputElement;
+  readonly settlementFrontageJunctionClearance: HTMLInputElement;
+  readonly settlementFrontageSpacingJitter: HTMLInputElement;
+  readonly settlementFrontageYawJitter: HTMLInputElement;
+  readonly settlementFrontageSeed: HTMLInputElement;
+  readonly populateSettlementButton: HTMLButtonElement;
+  readonly generateSettlementFrontageButton: HTMLButtonElement;
+  readonly clearSettlementFrontageButton: HTMLButtonElement;
+  readonly settlementFrontageSummary: HTMLElement;
   readonly assetCatalogInput: HTMLInputElement;
   readonly assetSelect: HTMLSelectElement;
   readonly assetSummary: HTMLElement;
@@ -237,6 +248,29 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
               <p id="route-summary" class="settlement-survey-summary route-summary" role="status">Turn on Route road, then click a start and destination.</p>
             </fieldset>
           </section>
+          <section class="panel-section settlement-frontage-section">
+            <div class="section-heading"><span>SA</span><h2>Populate settlement</h2></div>
+            <fieldset id="settlement-frontage-options" class="settlement-survey-options settlement-frontage-options" disabled>
+              <p class="settlement-frontage-context">Select an editable place region and a house asset. Side, setback, gap, and end clearance come from Frontage generation below.</p>
+              <div>
+                <p class="tool-group-label">Eligible road ranges</p>
+                <div id="settlement-frontage-roads" class="settlement-frontage-roads" aria-label="Eligible settlement roads"></div>
+              </div>
+              <div class="survey-measures settlement-frontage-measures">
+                <label for="settlement-frontage-maximum-slope"><span>Plot slope limit</span><input id="settlement-frontage-maximum-slope" type="number" min="0.1" max="89.9" step="0.1" value="15" /><small>°</small></label>
+                <label for="settlement-frontage-junction-clearance"><span>Junction clearance</span><input id="settlement-frontage-junction-clearance" type="number" min="0" step="1" value="18" /><small>m</small></label>
+                <label for="settlement-frontage-spacing-jitter"><span>Spacing jitter</span><input id="settlement-frontage-spacing-jitter" type="number" min="0" step="0.5" value="0" /><small>m</small></label>
+                <label for="settlement-frontage-yaw-jitter"><span>Yaw jitter</span><input id="settlement-frontage-yaw-jitter" type="number" min="0" max="180" step="0.5" value="0" /><small>°</small></label>
+                <label for="settlement-frontage-seed"><span>Population seed</span><input id="settlement-frontage-seed" type="number" step="1" value="1" /></label>
+              </div>
+              <div class="settlement-survey-actions settlement-frontage-actions">
+                <button id="populate-settlement" class="button button-primary" type="button" disabled>Populate settlement</button>
+                <button id="generate-settlement-frontage" class="button" type="button" aria-label="Generate settlement houses" disabled>Generate houses</button>
+                <button id="clear-settlement-frontage" class="button" type="button" disabled>Clear preview</button>
+              </div>
+              <p id="settlement-frontage-summary" class="settlement-survey-summary settlement-frontage-summary" role="status">Select a place region and house asset to begin.</p>
+            </fieldset>
+          </section>
           <section class="panel-section prefab-section">
             <div class="section-heading"><span>02</span><h2>Prefab assets</h2></div>
             <label class="catalogue-picker" for="asset-catalog-file">
@@ -374,7 +408,7 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
         <div class="status-metric"><span>X / Z</span><strong id="status-coordinates">—</strong></div>
         <div class="status-metric"><span>ELEVATION</span><strong id="status-elevation">—</strong></div>
         <div class="status-metric"><span>SLOPE</span><strong id="status-slope">—</strong></div>
-        <div class="status-build">MILESTONES 0–5 · SA-3</div>
+        <div class="status-build">MILESTONES 0–5 · SA-4</div>
       </footer>
     </main>
 
@@ -485,6 +519,17 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     routeSummary: byId("route-summary", HTMLElement),
     acceptRoadRouteButton: byId("accept-road-route", HTMLButtonElement),
     clearRoadRouteButton: byId("clear-road-route", HTMLButtonElement),
+    settlementFrontageOptions: byId("settlement-frontage-options", HTMLFieldSetElement),
+    settlementFrontageRoads: byId("settlement-frontage-roads", HTMLElement),
+    settlementFrontageMaximumSlope: byId("settlement-frontage-maximum-slope", HTMLInputElement),
+    settlementFrontageJunctionClearance: byId("settlement-frontage-junction-clearance", HTMLInputElement),
+    settlementFrontageSpacingJitter: byId("settlement-frontage-spacing-jitter", HTMLInputElement),
+    settlementFrontageYawJitter: byId("settlement-frontage-yaw-jitter", HTMLInputElement),
+    settlementFrontageSeed: byId("settlement-frontage-seed", HTMLInputElement),
+    populateSettlementButton: byId("populate-settlement", HTMLButtonElement),
+    generateSettlementFrontageButton: byId("generate-settlement-frontage", HTMLButtonElement),
+    clearSettlementFrontageButton: byId("clear-settlement-frontage", HTMLButtonElement),
+    settlementFrontageSummary: byId("settlement-frontage-summary", HTMLElement),
     assetCatalogInput: byId("asset-catalog-file", HTMLInputElement),
     assetSelect: byId("asset-select", HTMLSelectElement),
     assetSummary: byId("asset-summary", HTMLElement),
