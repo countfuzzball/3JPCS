@@ -8,6 +8,46 @@ export interface EditorElements {
   readonly redoButton: HTMLButtonElement;
   readonly toolButtons: readonly HTMLButtonElement[];
   readonly toolInstructions: HTMLElement;
+  readonly countyBuildOptions: HTMLFieldSetElement;
+  readonly countyOutputMode: HTMLSelectElement;
+  readonly countySourceMode: HTMLSelectElement;
+  readonly countyMainPlace: HTMLSelectElement;
+  readonly countySettlementCount: HTMLInputElement;
+  readonly countySeed: HTMLInputElement;
+  readonly countySiteMix: HTMLSelectElement;
+  readonly countyCreateBackbone: HTMLInputElement;
+  readonly countyBackboneOrientation: HTMLSelectElement;
+  readonly countyGridStep: HTMLInputElement;
+  readonly countyMaximumGrade: HTMLInputElement;
+  readonly countyRadiusScale: HTMLInputElement;
+  readonly countyLocalEdgeClearance: HTMLInputElement;
+  readonly countyBackboneWidth: HTMLInputElement;
+  readonly countyAccessWidth: HTMLInputElement;
+  readonly countyLocalWidth: HTMLInputElement;
+  readonly countyDrivewayWidth: HTMLInputElement;
+  readonly countySetback: HTMLInputElement;
+  readonly countyGap: HTMLInputElement;
+  readonly countyEndClearance: HTMLInputElement;
+  readonly countyMaximumPlotSlope: HTMLInputElement;
+  readonly countyJunctionClearance: HTMLInputElement;
+  readonly countySpacingJitter: HTMLInputElement;
+  readonly countyYawJitter: HTMLInputElement;
+  readonly countyMaximumRoutes: HTMLInputElement;
+  readonly countyMaximumVisitedNodes: HTMLInputElement;
+  readonly countyMaximumPrefabs: HTMLInputElement;
+  readonly countyMaximumDriveways: HTMLInputElement;
+  readonly countyStyleSelects: readonly HTMLSelectElement[];
+  readonly countyDriveways: HTMLInputElement;
+  readonly countyAssetRoleSelects: readonly HTMLSelectElement[];
+  readonly generateCountyButton: HTMLButtonElement;
+  readonly cancelCountyButton: HTMLButtonElement;
+  readonly bakeCountyButton: HTMLButtonElement;
+  readonly clearCountyButton: HTMLButtonElement;
+  readonly countyBuildProgress: HTMLProgressElement;
+  readonly countyBuildSummary: HTMLElement;
+  readonly countyBuildDiagnostics: HTMLElement;
+  readonly countyPreviewPlaceFilter: HTMLSelectElement;
+  readonly countyPreviewClassFilters: readonly HTMLInputElement[];
   readonly settlementSurveyOptions: HTMLFieldSetElement;
   readonly settlementProfile: HTMLSelectElement;
   readonly settlementCandidateCount: HTMLInputElement;
@@ -172,6 +212,123 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
               </div>
             </div>
             <p id="tool-instructions" class="milestone-note">Create a terrain project to enable geometry authoring.</p>
+          </section>
+          <section class="panel-section county-build-section">
+            <div class="section-heading"><span>SN</span><h2>Build County</h2></div>
+            <fieldset id="county-build-options" class="settlement-survey-options county-build-options" disabled>
+              <p class="settlement-frontage-context">Generate settlements, the county network, internal streets, junction-aware frontage, buildings, and optional driveways as one complete preview.</p>
+              <label class="survey-profile" for="county-output-mode"><span>Workflow</span>
+                <select id="county-output-mode">
+                  <option value="full">Build complete county</option>
+                  <option value="network_only">Network only for existing places</option>
+                </select>
+              </label>
+              <label class="survey-profile" for="county-source-mode"><span>Settlement source</span>
+                <select id="county-source-mode">
+                  <option value="survey">Survey terrain automatically</option>
+                  <option value="existing_places">Use existing place regions</option>
+                </select>
+              </label>
+              <label class="survey-profile" for="county-main-place"><span>Main settlement</span>
+                <select id="county-main-place"><option value="">Auto (highest-ranked town)</option></select>
+              </label>
+              <div class="survey-measures county-build-measures">
+                <label for="county-settlement-count"><span>Settlements</span><input id="county-settlement-count" type="number" min="1" max="25" step="1" value="5" /></label>
+                <label for="county-seed"><span>County seed</span><input id="county-seed" type="number" step="1" value="1" /></label>
+              </div>
+              <label class="survey-preferred-toggle" for="county-create-backbone">
+                <input id="county-create-backbone" type="checkbox" checked />
+                <span>Create county backbone</span>
+              </label>
+              <details class="county-build-advanced">
+                <summary>Advanced county policy</summary>
+                <label class="survey-profile" for="county-backbone-orientation"><span>Backbone orientation</span>
+                  <select id="county-backbone-orientation">
+                    <option value="auto">Auto</option>
+                    <option value="west_east">West-East</option>
+                    <option value="north_south">North-South</option>
+                  </select>
+                </label>
+                <label class="survey-profile" for="county-site-mix"><span>Survey site mix</span>
+                  <select id="county-site-mix">
+                    <option value="balanced">Balanced</option>
+                    <option value="urban">Urban-weighted</option>
+                    <option value="rural">Rural-weighted</option>
+                  </select>
+                </label>
+                <p class="tool-group-label">Internal street styles</p>
+                <div class="county-asset-program county-style-program">
+                  ${countyStyleSelect("town", "Town", "planned")}
+                  ${countyStyleSelect("village", "Village", "roadside")}
+                  ${countyStyleSelect("hamlet", "Hamlet", "roadside")}
+                  ${countyStyleSelect("farm", "Farm", "agricultural")}
+                </div>
+                <div class="survey-measures county-build-measures">
+                  <label for="county-grid-step"><span>A* grid step</span><input id="county-grid-step" type="number" min="0.1" step="1" value="50" /><small>m</small></label>
+                  <label for="county-maximum-grade"><span>Maximum grade</span><input id="county-maximum-grade" type="number" min="0.001" step="0.01" value="0.18" /></label>
+                  <label for="county-radius-scale"><span>Survey footprint multiplier</span><input id="county-radius-scale" type="number" min="0.05" max="4" step="0.05" value="1" /></label>
+                  <label for="county-local-edge-clearance"><span>Street edge clearance</span><input id="county-local-edge-clearance" type="number" min="0" step="0.5" value="2" /><small>m</small></label>
+                </div>
+                <p class="tool-group-label">Generated road widths</p>
+                <div class="survey-measures county-build-measures">
+                  <label for="county-backbone-width"><span>Backbone</span><input id="county-backbone-width" type="number" min="0.1" step="0.5" value="9" /><small>m</small></label>
+                  <label for="county-access-width"><span>Access</span><input id="county-access-width" type="number" min="0.1" step="0.5" value="6" /><small>m</small></label>
+                  <label for="county-local-width"><span>Local/terminal</span><input id="county-local-width" type="number" min="0.1" step="0.5" value="4.4" /><small>m</small></label>
+                  <label for="county-driveway-width"><span>Driveway</span><input id="county-driveway-width" type="number" min="0.1" step="0.2" value="2.8" /><small>m</small></label>
+                </div>
+                <label class="survey-preferred-toggle" for="county-driveways">
+                  <input id="county-driveways" type="checkbox" checked />
+                  <span>Generate valid driveway roads</span>
+                </label>
+                <p class="tool-group-label">County frontage safety and density</p>
+                <div class="survey-measures county-build-measures">
+                  <label for="county-setback"><span>County building offset</span><input id="county-setback" type="number" min="0" step="0.5" value="6" /><small>m</small></label>
+                  <label for="county-gap"><span>Building gap</span><input id="county-gap" type="number" min="0" step="0.5" value="4" /><small>m</small></label>
+                  <label for="county-end-clearance"><span>County endpoint margin</span><input id="county-end-clearance" type="number" min="0" step="0.5" value="5" /><small>m</small></label>
+                  <label for="county-maximum-plot-slope"><span>County terrain angle cap</span><input id="county-maximum-plot-slope" type="number" min="0" max="89.9" step="0.5" value="18" /><small>°</small></label>
+                  <label for="county-junction-clearance"><span>County intersection margin</span><input id="county-junction-clearance" type="number" min="0" step="0.5" value="8" /><small>m</small></label>
+                  <label for="county-spacing-jitter"><span>County spacing variation</span><input id="county-spacing-jitter" type="number" min="0" step="0.1" value="0" /><small>m</small></label>
+                  <label for="county-yaw-jitter"><span>County facing variation</span><input id="county-yaw-jitter" type="number" min="0" max="45" step="0.5" value="0" /><small>°</small></label>
+                </div>
+                <p class="tool-group-label">Building asset programme</p>
+                <div class="county-asset-program">
+                  ${countyAssetSelect("house", "House (required)")}
+                  ${countyAssetSelect("shop", "Shop")}
+                  ${countyAssetSelect("civic", "Civic")}
+                  ${countyAssetSelect("farmhouse", "Farmhouse")}
+                  ${countyAssetSelect("barn", "Barn")}
+                  ${countyAssetSelect("shed", "Shed")}
+                  ${countyAssetSelect("warehouse", "Warehouse")}
+                </div>
+                <p class="tool-group-label">Whole-build budgets</p>
+                <div class="survey-measures county-build-measures">
+                  <label for="county-maximum-routes"><span>Routes</span><input id="county-maximum-routes" type="number" min="1" max="256" step="1" value="64" /></label>
+                  <label for="county-maximum-visited-nodes"><span>A* visited nodes</span><input id="county-maximum-visited-nodes" type="number" min="1" step="10000" value="5000000" /></label>
+                  <label for="county-maximum-prefabs"><span>Buildings</span><input id="county-maximum-prefabs" type="number" min="1" step="100" value="5000" /></label>
+                  <label for="county-maximum-driveways"><span>Driveways</span><input id="county-maximum-driveways" type="number" min="1" step="100" value="5000" /></label>
+                </div>
+              </details>
+              <div class="county-build-actions">
+                <button id="generate-county-preview" class="button button-primary" type="button">Generate County Preview</button>
+                <button id="cancel-county-build" class="button" type="button" disabled>Cancel</button>
+                <button id="bake-county" class="button" type="button" disabled>Bake County</button>
+                <button id="clear-county-preview" class="button" type="button" disabled>Clear preview</button>
+              </div>
+              <progress id="county-build-progress" class="county-build-progress" max="1" value="0" hidden></progress>
+              <p id="county-build-summary" class="settlement-survey-summary county-build-summary" role="status">Map a house asset, then generate a complete county preview.</p>
+              <details class="county-build-advanced county-preview-filters">
+                <summary>Preview filters</summary>
+                <label class="survey-profile" for="county-preview-place"><span>Settlement</span><select id="county-preview-place"><option value="">All settlements</option></select></label>
+                <div class="county-preview-filter-grid">
+                  ${countyPreviewFilter("places", "Places")}
+                  ${countyPreviewFilter("roads", "Roads")}
+                  ${countyPreviewFilter("prefabs", "Buildings")}
+                  ${countyPreviewFilter("junctions", "Junctions")}
+                  ${countyPreviewFilter("skipped", "Skipped")}
+                </div>
+              </details>
+              <div id="county-build-diagnostics" class="county-build-diagnostics" aria-label="County build diagnostics"></div>
+            </fieldset>
           </section>
           <section class="panel-section settlement-survey-section">
             <div class="section-heading"><span>SA</span><h2>Settlement survey</h2></div>
@@ -489,6 +646,46 @@ export function buildRootLayout(host: HTMLElement): EditorElements {
     redoButton: byId("redo", HTMLButtonElement),
     toolButtons: [...document.querySelectorAll<HTMLButtonElement>("[data-tool]")],
     toolInstructions: byId("tool-instructions", HTMLElement),
+    countyBuildOptions: byId("county-build-options", HTMLFieldSetElement),
+    countyOutputMode: byId("county-output-mode", HTMLSelectElement),
+    countySourceMode: byId("county-source-mode", HTMLSelectElement),
+    countyMainPlace: byId("county-main-place", HTMLSelectElement),
+    countySettlementCount: byId("county-settlement-count", HTMLInputElement),
+    countySeed: byId("county-seed", HTMLInputElement),
+    countySiteMix: byId("county-site-mix", HTMLSelectElement),
+    countyCreateBackbone: byId("county-create-backbone", HTMLInputElement),
+    countyBackboneOrientation: byId("county-backbone-orientation", HTMLSelectElement),
+    countyGridStep: byId("county-grid-step", HTMLInputElement),
+    countyMaximumGrade: byId("county-maximum-grade", HTMLInputElement),
+    countyRadiusScale: byId("county-radius-scale", HTMLInputElement),
+    countyLocalEdgeClearance: byId("county-local-edge-clearance", HTMLInputElement),
+    countyBackboneWidth: byId("county-backbone-width", HTMLInputElement),
+    countyAccessWidth: byId("county-access-width", HTMLInputElement),
+    countyLocalWidth: byId("county-local-width", HTMLInputElement),
+    countyDrivewayWidth: byId("county-driveway-width", HTMLInputElement),
+    countySetback: byId("county-setback", HTMLInputElement),
+    countyGap: byId("county-gap", HTMLInputElement),
+    countyEndClearance: byId("county-end-clearance", HTMLInputElement),
+    countyMaximumPlotSlope: byId("county-maximum-plot-slope", HTMLInputElement),
+    countyJunctionClearance: byId("county-junction-clearance", HTMLInputElement),
+    countySpacingJitter: byId("county-spacing-jitter", HTMLInputElement),
+    countyYawJitter: byId("county-yaw-jitter", HTMLInputElement),
+    countyMaximumRoutes: byId("county-maximum-routes", HTMLInputElement),
+    countyMaximumVisitedNodes: byId("county-maximum-visited-nodes", HTMLInputElement),
+    countyMaximumPrefabs: byId("county-maximum-prefabs", HTMLInputElement),
+    countyMaximumDriveways: byId("county-maximum-driveways", HTMLInputElement),
+    countyStyleSelects: [...document.querySelectorAll<HTMLSelectElement>("select[data-county-style-profile]")],
+    countyDriveways: byId("county-driveways", HTMLInputElement),
+    countyAssetRoleSelects: [...document.querySelectorAll<HTMLSelectElement>("select[data-county-asset-role]")],
+    generateCountyButton: byId("generate-county-preview", HTMLButtonElement),
+    cancelCountyButton: byId("cancel-county-build", HTMLButtonElement),
+    bakeCountyButton: byId("bake-county", HTMLButtonElement),
+    clearCountyButton: byId("clear-county-preview", HTMLButtonElement),
+    countyBuildProgress: byId("county-build-progress", HTMLProgressElement),
+    countyBuildSummary: byId("county-build-summary", HTMLElement),
+    countyBuildDiagnostics: byId("county-build-diagnostics", HTMLElement),
+    countyPreviewPlaceFilter: byId("county-preview-place", HTMLSelectElement),
+    countyPreviewClassFilters: [...document.querySelectorAll<HTMLInputElement>("input[data-county-preview-class]")],
     settlementSurveyOptions: byId("settlement-survey-options", HTMLFieldSetElement),
     settlementProfile: byId("settlement-profile", HTMLSelectElement),
     settlementCandidateCount: byId("settlement-candidate-count", HTMLInputElement),
@@ -621,4 +818,19 @@ function layerToggle(id: string, title: string, detail: string, swatchClass: str
 
 function relinkField(id: string, label: string, accept: string): string {
   return `<label for="${id}"><span>${label}</span><input id="${id}" type="file" accept="${accept}" /></label>`;
+}
+
+function countyAssetSelect(role: string, label: string): string {
+  return `<label for="county-asset-${role}"><span>${label}</span><select id="county-asset-${role}" data-county-asset-role="${role}" multiple size="2" disabled><option value="">${role === "house" ? "Choose one or more assets" : "Disabled / unmapped"}</option></select></label>`;
+}
+
+function countyStyleSelect(profile: string, label: string, selected: string): string {
+  const options = ["planned", "organic", "roadside", "agricultural"]
+    .map((style) => `<option value="${style}" ${style === selected ? "selected" : ""}>${style.charAt(0).toUpperCase() + style.slice(1)}</option>`)
+    .join("");
+  return `<label for="county-style-${profile}"><span>${label}</span><select id="county-style-${profile}" data-county-style-profile="${profile}">${options}</select></label>`;
+}
+
+function countyPreviewFilter(value: string, label: string): string {
+  return `<label><input type="checkbox" data-county-preview-class="${value}" checked /><span>${label}</span></label>`;
 }

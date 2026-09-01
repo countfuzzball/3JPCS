@@ -1,0 +1,27 @@
+{
+  "policy_version": 1,
+  "main_settlement": "highest-ranked town, otherwise highest-ranked site",
+  "connection_order": "main settlement followed by deterministic survey order",
+  "growing_network": true,
+  "backbone": {
+    "optional": true,
+    "auto_square_orientation": "west_east",
+    "legs": 2,
+    "straight_fallback": false
+  },
+  "street_styles": ["planned", "organic", "roadside", "agricultural"],
+  "road_roles": ["backbone", "access", "plot", "terminal", "loop", "farm_yard", "property_access"],
+  "building_roles": ["house", "shop", "civic", "farmhouse", "barn", "shed", "warehouse"],
+  "building_targets": {
+    "town": [85, 105],
+    "village": [34, 50],
+    "hamlet": [13, 22],
+    "farm": [5, 9]
+  },
+  "translation": {
+    "settlement_geometry": "editable polygon with deterministic interior anchor",
+    "building_dimensions": "asset catalogue proxy footprint",
+    "accepted_output": "ordinary PlaceRegion, Road and PrefabInstance records",
+    "acceptance": "one complete preview followed by one atomic bake"
+  }
+}

@@ -5,7 +5,7 @@ export interface JsonObject {
   readonly [key: string]: JsonValue;
 }
 
-export type GenerationKind = "settlement_survey" | "road_route" | "settlement_frontage";
+export type GenerationKind = "settlement_survey" | "road_route" | "settlement_frontage" | "county_build";
 
 export interface GenerationRequest<TInput extends JsonValue = JsonValue> {
   readonly operationId: number;

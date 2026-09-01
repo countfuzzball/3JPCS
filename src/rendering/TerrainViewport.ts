@@ -38,6 +38,8 @@ import {
 import { RoadRouteRenderAdapter, type RoadRouteProjection } from "./RoadRouteRenderAdapter";
 import { SettlementFrontageRenderAdapter } from "./SettlementFrontageRenderAdapter";
 import type { SettlementFrontagePlan } from "../generation/settlementFrontage";
+import { CountyBuildRenderAdapter, type CountyBuildPreviewFilter } from "./CountyBuildRenderAdapter";
+import type { CountyBuildPlan } from "../generation/countyBuild";
 
 export interface ViewportPerformanceSnapshot {
   readonly drawCalls: number;
@@ -85,6 +87,7 @@ export class TerrainViewport {
   readonly #settlementSurvey = new SettlementSurveyRenderAdapter();
   readonly #roadRoute = new RoadRouteRenderAdapter();
   readonly #settlementFrontage = new SettlementFrontageRenderAdapter();
+  readonly #countyBuild = new CountyBuildRenderAdapter();
   readonly #prefabs = new PrefabRenderAdapter();
   readonly #references = new ReferenceRenderAdapter();
   readonly #vegetation = new VegetationRenderDataManager();
@@ -114,6 +117,7 @@ export class TerrainViewport {
     this.#scene.add(this.#settlementSurvey.group);
     this.#scene.add(this.#roadRoute.group);
     this.#scene.add(this.#settlementFrontage.group);
+    this.#scene.add(this.#countyBuild.group);
     this.#scene.add(this.#prefabs.group);
     this.#scene.add(this.#vegetation.group);
     this.#scene.add(this.#references.group);
@@ -175,6 +179,8 @@ export class TerrainViewport {
     settlementSurvey: SettlementSurveyProjection | null,
     roadRoute: RoadRouteProjection | null,
     settlementFrontage: SettlementFrontagePlan | null,
+    countyBuild: CountyBuildPlan | null,
+    countyBuildFilter: CountyBuildPreviewFilter,
     county: CountyReference | null,
     vegetation: VegetationReference | null,
     referenceLayers: ReferenceLayerState,
@@ -187,6 +193,7 @@ export class TerrainViewport {
     this.#settlementSurvey.sync(settlementSurvey, overlayY);
     this.#roadRoute.sync(roadRoute, overlayY);
     this.#settlementFrontage.sync(settlementFrontage, overlayY);
+    this.#countyBuild.sync(countyBuild, overlayY, countyBuildFilter);
     this.#prefabs.sync(
       (model?.list("prefab") ?? []).filter((entity) => entity.kind === "prefab"),
       catalog,
@@ -305,6 +312,7 @@ export class TerrainViewport {
     this.#settlementSurvey.dispose();
     this.#roadRoute.dispose();
     this.#settlementFrontage.dispose();
+    this.#countyBuild.dispose();
     this.#prefabs.dispose();
     this.#references.dispose();
     this.#vegetation.dispose();
@@ -312,6 +320,7 @@ export class TerrainViewport {
     this.#scene.remove(this.#settlementSurvey.group);
     this.#scene.remove(this.#roadRoute.group);
     this.#scene.remove(this.#settlementFrontage.group);
+    this.#scene.remove(this.#countyBuild.group);
     this.#scene.remove(this.#prefabs.group);
     this.#scene.remove(this.#references.group);
     this.#scene.remove(this.#vegetation.group);

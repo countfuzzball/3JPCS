@@ -64,6 +64,7 @@ import {
   type PrimaryPointerIntent,
 } from "../rendering/TerrainViewport";
 import type { TerrainLayerState } from "../rendering/terrain/terrainTexture";
+import type { CountyBuildPreviewFilter } from "../rendering/CountyBuildRenderAdapter";
 import {
   convertCountyToNative,
   convertVegetationToNative,
@@ -98,6 +99,26 @@ import {
   type SettlementFrontageSettings,
   type SettlementRoadEligibility,
 } from "../generation/settlementFrontage";
+import { CountyBuildWorkerClient } from "../generation/CountyBuildWorkerClient";
+import {
+  COUNTY_BUILDING_ROLES,
+  COUNTY_STREET_STYLES,
+  DEFAULT_COUNTY_ROAD_STYLES,
+  copyCountyBuildTerrain,
+  materializeCountyPlan,
+  type CountyAssetChoice,
+  type CountyAssetProgram,
+  type CountyBackboneOrientation,
+  type CountyBuildingRole,
+  type CountyBuildInput,
+  type CountyBuildPlan,
+  type CountyBuildProgress,
+  type CountyBuildResult,
+  type CountySourceMode,
+  type CountyOutputMode,
+  type CountySiteMix,
+  type CountyStreetStyle,
+} from "../generation/countyBuild";
 
 type Tool = "select"
   | `place:${typeof PLACE_TYPES[number]}`
@@ -185,6 +206,14 @@ export class EditorApp {
   #settlementFrontageSourceKey: string | null = null;
   #settlementFrontageError: string | null = null;
   #settlementFrontageInvalidated = false;
+  readonly #countyBuilder = new CountyBuildWorkerClient();
+  #countyBuildResult: CountyBuildResult | null = null;
+  #countyBuildProgress: CountyBuildProgress | null = null;
+  #countyBuildRunning = false;
+  #countyBuildSourceRevision: number | null = null;
+  #countyBuildSettingsKey: string | null = null;
+  #countyBuildError: string | null = null;
+  #countyBuildInvalidated = false;
   #saveHandle: SaveFileHandle | null = null;
   #projectFileName = "project.scenery.json";
 
@@ -207,6 +236,7 @@ export class EditorApp {
 
   public dispose(): void {
     this.#roadRouter.dispose();
+    this.#countyBuilder.dispose();
     this.#viewport.dispose();
   }
 
@@ -318,6 +348,57 @@ export class EditorApp {
     this.#elements.exportTerrainButton.addEventListener("click", () => { void this.#exportFinalTerrain(); });
     this.#elements.exportVegetationButton.addEventListener("click", () => this.#exportResampledVegetation());
     this.#elements.assetSelect.addEventListener("change", () => this.#assetSelectionChanged());
+    for (const input of [
+      this.#elements.countyOutputMode,
+      this.#elements.countySourceMode,
+      this.#elements.countyMainPlace,
+      this.#elements.countySettlementCount,
+      this.#elements.countySeed,
+      this.#elements.countySiteMix,
+      this.#elements.countyCreateBackbone,
+      this.#elements.countyBackboneOrientation,
+      this.#elements.countyGridStep,
+      this.#elements.countyMaximumGrade,
+      this.#elements.countyRadiusScale,
+      this.#elements.countyLocalEdgeClearance,
+      this.#elements.countyBackboneWidth,
+      this.#elements.countyAccessWidth,
+      this.#elements.countyLocalWidth,
+      this.#elements.countyDrivewayWidth,
+      this.#elements.countySetback,
+      this.#elements.countyGap,
+      this.#elements.countyEndClearance,
+      this.#elements.countyMaximumPlotSlope,
+      this.#elements.countyJunctionClearance,
+      this.#elements.countySpacingJitter,
+      this.#elements.countyYawJitter,
+      this.#elements.countyMaximumRoutes,
+      this.#elements.countyMaximumVisitedNodes,
+      this.#elements.countyMaximumPrefabs,
+      this.#elements.countyMaximumDriveways,
+      this.#elements.countyDriveways,
+      ...this.#elements.countyAssetRoleSelects,
+      ...this.#elements.countyStyleSelects,
+    ]) {
+      input.addEventListener(input instanceof HTMLInputElement && input.type !== "checkbox" ? "input" : "change", () => {
+        this.#countyBuildInputChanged();
+      });
+    }
+    this.#elements.countyOutputMode.addEventListener("change", () => {
+      if (this.#elements.countyOutputMode.value === "network_only") {
+        this.#elements.countySourceMode.value = "existing_places";
+      }
+      this.#renderCountyBuildControls();
+    });
+    this.#elements.countySourceMode.addEventListener("change", () => this.#renderCountyBuildControls());
+    this.#elements.countyPreviewPlaceFilter.addEventListener("change", () => this.#syncProjection());
+    for (const filter of this.#elements.countyPreviewClassFilters) {
+      filter.addEventListener("change", () => this.#syncProjection());
+    }
+    this.#elements.generateCountyButton.addEventListener("click", () => this.#generateCountyPreview());
+    this.#elements.cancelCountyButton.addEventListener("click", () => this.#cancelCountyBuild(true));
+    this.#elements.bakeCountyButton.addEventListener("click", () => this.#bakeCounty());
+    this.#elements.clearCountyButton.addEventListener("click", () => this.#clearCountyBuild(true));
     this.#elements.settlementProfile.addEventListener("change", () => this.#settlementProfileChanged());
     for (const input of [
       this.#elements.settlementCandidateCount,
@@ -329,10 +410,14 @@ export class EditorApp {
       this.#elements.settlementSeed,
       this.#elements.settlementAttemptBudget,
     ]) {
-      input.addEventListener("input", () => this.#settlementSurveyInputChanged());
+      input.addEventListener("input", () => {
+        this.#settlementSurveyInputChanged();
+        this.#countyBuildInputChanged();
+      });
     }
     this.#elements.settlementUsePreferredElevation.addEventListener("change", () => {
       this.#settlementSurveyInputChanged();
+      this.#countyBuildInputChanged();
       this.#renderSettlementSurveyControls();
     });
     this.#elements.runSettlementSurveyButton.addEventListener("click", () => this.#runSettlementSurvey());
@@ -371,7 +456,9 @@ export class EditorApp {
       this.#elements.settlementFrontageYawJitter,
       this.#elements.settlementFrontageSeed,
     ]) {
-      input.addEventListener("input", () => this.#settlementFrontageInputChanged());
+      input.addEventListener("input", () => {
+        this.#settlementFrontageInputChanged();
+      });
     }
     this.#elements.settlementFrontageRoads.addEventListener("change", (event) => {
       const input = event.target;
@@ -385,14 +472,18 @@ export class EditorApp {
     this.#elements.generateSettlementFrontageButton.addEventListener("click", () => this.#generateSettlementFrontage());
     this.#elements.clearSettlementFrontageButton.addEventListener("click", () => this.#clearSettlementFrontage(true));
     for (const input of this.#elements.frontageSideInputs) {
-      input.addEventListener("change", () => this.#frontageOptionsChanged());
+      input.addEventListener("change", () => {
+        this.#frontageOptionsChanged();
+      });
     }
     for (const input of [
       this.#elements.frontageSetback,
       this.#elements.frontageGap,
       this.#elements.frontageEndClearance,
     ]) {
-      input.addEventListener("input", () => this.#frontageOptionsChanged());
+      input.addEventListener("input", () => {
+        this.#frontageOptionsChanged();
+      });
     }
     this.#elements.generateFrontageButton.addEventListener("click", () => this.#generateFrontage());
     this.#elements.clearFrontageButton.addEventListener("click", () => this.#clearFrontageRange(true));
@@ -716,6 +807,7 @@ export class EditorApp {
     if (state.terrain && state.terrain !== this.#activeBaseTerrain) {
       this.#elements.settlementPreferredElevation.value = String(state.terrain.lowlandReferenceElevationM);
       this.#elements.routeGridStep.value = String(Math.max(50, state.terrain.spacingM));
+      this.#elements.countyGridStep.value = String(Math.max(50, state.terrain.spacingM));
     }
     if (this.#settlementSurveyResult) {
       const places = state.model?.list("place").filter((entity): entity is PlaceRegion => entity.kind === "place") ?? [];
@@ -748,6 +840,11 @@ export class EditorApp {
         || this.#settlementFrontageCurrentSourceKey() !== this.#settlementFrontageSourceKey;
       if (sourceChanged) this.#invalidateSettlementFrontage();
     }
+    if (
+      (this.#countyBuildRunning || this.#countyBuildResult)
+      && this.#countyBuildSourceRevision !== null
+      && state.revision !== this.#countyBuildSourceRevision
+    ) this.#invalidateCountyBuild();
     const projectName = state.model?.name ?? "Scenery Editor";
     this.#elements.projectTitle.textContent = projectName;
     this.#elements.dirtyMarker.hidden = !state.dirty;
@@ -782,6 +879,7 @@ export class EditorApp {
       ? TOOL_INSTRUCTIONS[this.#tool]
       : "Create a terrain project to enable geometry authoring.";
     this.#elements.assetCatalogInput.disabled = !state.model;
+    this.#elements.countyBuildOptions.disabled = !state.model || !state.workingTerrain;
     this.#elements.settlementSurveyOptions.disabled = !state.model || !state.workingTerrain;
     this.#elements.routeRoadOptions.disabled = !state.model || !state.workingTerrain;
     this.#elements.settlementFrontageOptions.disabled = !state.model || !state.workingTerrain;
@@ -808,6 +906,8 @@ export class EditorApp {
     this.#renderSettlementSurveyControls();
     this.#renderRoadRouteControls();
     this.#renderSettlementFrontageControls();
+    this.#renderCountyContextChoices();
+    this.#renderCountyBuildControls();
     this.#renderWarnings(state);
 
     if (state.terrain && state.workingTerrain && state.workingTerrain !== this.#activeTerrain) {
@@ -843,6 +943,7 @@ export class EditorApp {
       this.#elements.statusMessage.textContent = "Enter a logical vegetation species/asset ID before placing vegetation";
       return;
     }
+    if (this.#countyBuildRunning || this.#countyBuildResult) this.#clearCountyBuild(false);
     if (this.#tool === "frontage" || tool === "frontage") {
       this.#frontageStart = null;
       this.#frontageEnd = null;
@@ -1118,6 +1219,430 @@ export class EditorApp {
     this.#store.addEntity(entity, `Place ${entity.name}`);
     this.#elements.statusMessage.textContent = `Placed ${entity.name} — vegetation placement remains on`;
     this.#renderInspector();
+  }
+
+  #countyAssetProgram(): CountyAssetProgram | null {
+    const catalog = this.#store.state.assetCatalog;
+    if (!catalog) return null;
+    const program = Object.fromEntries(
+      COUNTY_BUILDING_ROLES.map((role) => [role, [] as CountyAssetChoice[]]),
+    ) as Record<CountyBuildingRole, CountyAssetChoice[]>;
+    for (const select of this.#elements.countyAssetRoleSelects) {
+      const role = select.dataset.countyAssetRole;
+      if (!isCountyBuildingRole(role)) continue;
+      for (const option of [...select.selectedOptions]) {
+        if (!option.value) continue;
+        const asset = catalog.definition(option.value);
+        const proxy = asset ? catalog.proxyForCategory(asset.category) : undefined;
+        if (!asset || !proxy) continue;
+        program[role].push({
+          assetId: asset.asset_id,
+          category: asset.category,
+          displayName: asset.display_name,
+          widthM: proxy.width_m,
+          depthM: proxy.depth_m,
+        });
+      }
+    }
+    return program;
+  }
+
+  #countyStyleProgram(): Readonly<Record<SettlementSurveyProfileId, CountyStreetStyle>> | null {
+    const result = {} as Record<SettlementSurveyProfileId, CountyStreetStyle>;
+    for (const select of this.#elements.countyStyleSelects) {
+      const profile = select.dataset.countyStyleProfile;
+      const style = select.value;
+      if (!profile || !isSettlementSurveyProfileId(profile) || !isCountyStreetStyle(style)) return null;
+      result[profile] = style;
+    }
+    return Object.keys(result).length === 4 ? result : null;
+  }
+
+  #countyBuildInput(): CountyBuildInput | null {
+    const { model, workingTerrain, assetCatalog } = this.#store.state;
+    if (!model || !workingTerrain) return null;
+    const sourceModeValue = this.#elements.countySourceMode.value;
+    const sourceMode = isCountySourceMode(sourceModeValue) ? sourceModeValue : null;
+    const outputModeValue = this.#elements.countyOutputMode.value;
+    const outputMode = isCountyOutputMode(outputModeValue) ? outputModeValue : null;
+    this.#elements.countySourceMode.setAttribute("aria-invalid", String(sourceMode === null));
+    const desiredSettlementCount = surveyInputNumber(
+      this.#elements.countySettlementCount,
+      (value) => Number.isSafeInteger(value) && value >= 1 && value <= 25,
+    );
+    const seed = surveyInputNumber(this.#elements.countySeed, Number.isSafeInteger);
+    const gridStepM = surveyInputNumber(this.#elements.countyGridStep, (value) => value > 0);
+    const maximumGrade = surveyInputNumber(this.#elements.countyMaximumGrade, (value) => value > 0);
+    const radiusScale = surveyInputNumber(this.#elements.countyRadiusScale, (value) => value >= 0.05 && value <= 4);
+    const localEdgeClearanceM = surveyInputNumber(this.#elements.countyLocalEdgeClearance, (value) => value >= 0);
+    const backboneWidthM = surveyInputNumber(this.#elements.countyBackboneWidth, (value) => value > 0);
+    const accessWidthM = surveyInputNumber(this.#elements.countyAccessWidth, (value) => value > 0);
+    const localWidthM = surveyInputNumber(this.#elements.countyLocalWidth, (value) => value > 0);
+    const drivewayWidthM = surveyInputNumber(this.#elements.countyDrivewayWidth, (value) => value > 0);
+    const maximumRoutes = surveyInputNumber(this.#elements.countyMaximumRoutes, (value) => Number.isSafeInteger(value) && value >= 1);
+    const maximumVisitedNodes = surveyInputNumber(this.#elements.countyMaximumVisitedNodes, (value) => Number.isSafeInteger(value) && value >= 1);
+    const maximumPrefabs = surveyInputNumber(this.#elements.countyMaximumPrefabs, (value) => Number.isSafeInteger(value) && value >= 1);
+    const maximumDriveways = surveyInputNumber(this.#elements.countyMaximumDriveways, (value) => Number.isSafeInteger(value) && value >= 1);
+    const minimumSeparationM = surveyInputNumber(this.#elements.settlementMinimumSeparation, (value) => value >= 0);
+    const edgeClearanceM = surveyInputNumber(this.#elements.settlementEdgeClearance, (value) => value >= 0);
+    const attemptBudgetPerSite = surveyInputNumber(
+      this.#elements.settlementAttemptBudget,
+      (value) => Number.isSafeInteger(value) && value >= 1 && value <= 100_000,
+    );
+    const frontageValues = [
+      surveyInputNumber(this.#elements.countySetback, (value) => value >= 0),
+      surveyInputNumber(this.#elements.countyGap, (value) => value >= 0),
+      surveyInputNumber(this.#elements.countyEndClearance, (value) => value >= 0),
+      surveyInputNumber(this.#elements.countyMaximumPlotSlope, (value) => value >= 0 && value < 90),
+      surveyInputNumber(this.#elements.countyJunctionClearance, (value) => value >= 0),
+      surveyInputNumber(this.#elements.countySpacingJitter, (value) => value >= 0),
+      surveyInputNumber(this.#elements.countyYawJitter, (value) => value >= 0 && value <= 45),
+    ] as const;
+    const assetProgram = this.#countyAssetProgram() ?? emptyCountyAssetProgram();
+    const orientationValue = this.#elements.countyBackboneOrientation.value;
+    const backboneOrientation = isCountyBackboneOrientation(orientationValue) ? orientationValue : null;
+    this.#elements.countyBackboneOrientation.setAttribute("aria-invalid", String(backboneOrientation === null));
+    if (
+      sourceMode === null
+      || outputMode === null
+      || desiredSettlementCount === null
+      || seed === null
+      || gridStepM === null
+      || maximumGrade === null
+      || radiusScale === null
+      || localEdgeClearanceM === null
+      || backboneWidthM === null
+      || accessWidthM === null
+      || localWidthM === null
+      || drivewayWidthM === null
+      || maximumRoutes === null
+      || maximumVisitedNodes === null
+      || maximumPrefabs === null
+      || maximumDriveways === null
+      || minimumSeparationM === null
+      || edgeClearanceM === null
+      || attemptBudgetPerSite === null
+      || frontageValues.some((value) => value === null)
+      || (outputMode === "full" && assetProgram.house.length === 0)
+      || backboneOrientation === null
+    ) return null;
+    const siteMixValue = this.#elements.countySiteMix.value;
+    const siteMix = isCountySiteMix(siteMixValue) ? siteMixValue : null;
+    const styleByProfile = this.#countyStyleProgram();
+    if (!siteMix || !styleByProfile || (outputMode === "network_only" && sourceMode !== "existing_places")) return null;
+    const places = model.list("place").filter((entity): entity is PlaceRegion => entity.kind === "place");
+    const selectedExistingPlaceIds = places
+      .filter((place) => place.visible && place.place_type !== "military_area")
+      .map(({ id }) => id);
+    const roads = model.list("road").filter((entity): entity is Road => entity.kind === "road");
+    const existingPrefabFootprints = outputMode === "full" && assetCatalog ? model.prefabInstances().map((prefab) => {
+      const size = prefabProxySize(prefab, assetCatalog);
+      return prefabFootprint(prefab.x_m, prefab.z_m, size.widthM, size.depthM, prefab.rotation_deg);
+    }) : [];
+    const preferredElevationM = this.#elements.settlementUsePreferredElevation.checked
+      ? Number(this.#elements.settlementPreferredElevation.value)
+      : null;
+    if (preferredElevationM !== null && !Number.isFinite(preferredElevationM)) return null;
+    return {
+      outputMode,
+      sourceMode,
+      desiredSettlementCount,
+      selectedExistingPlaceIds,
+      mainPlaceIdOverride: this.#elements.countyMainPlace.value || null,
+      existingPlaces: places,
+      existingRoads: roads,
+      existingPrefabFootprints,
+      createBackbone: this.#elements.countyCreateBackbone.checked,
+      backboneOrientation,
+      routing: {
+        gridStepM,
+        slopeWeight: 42,
+        maximumGrade,
+        turnPenaltyM: 4,
+        edgeClearanceM: 0,
+      },
+      roadStyles: {
+        backbone: { ...DEFAULT_COUNTY_ROAD_STYLES.backbone, widthM: backboneWidthM },
+        access: { ...DEFAULT_COUNTY_ROAD_STYLES.access, widthM: accessWidthM },
+        local: { ...DEFAULT_COUNTY_ROAD_STYLES.local, widthM: localWidthM },
+        terminal: { ...DEFAULT_COUNTY_ROAD_STYLES.terminal, widthM: localWidthM },
+        farmYard: { ...DEFAULT_COUNTY_ROAD_STYLES.farmYard, widthM: localWidthM },
+        driveway: { ...DEFAULT_COUNTY_ROAD_STYLES.driveway, widthM: drivewayWidthM },
+      },
+      survey: {
+        minimumSeparationM,
+        edgeClearanceM,
+        preferredElevationM,
+        attemptBudgetPerSite,
+        radiusScale,
+        siteMix,
+      },
+      styleByProfile,
+      budgets: { maximumRoutes, maximumVisitedNodes, maximumPrefabs, maximumDriveways },
+      localStreets: {
+        edgeClearanceM: localEdgeClearanceM,
+        minimumRoadLengthM: Math.max(4, gridStepM * 0.2),
+        sampleStepM: Math.max(1, Math.min(10, workingTerrain.spacingM / 2)),
+        maximumGrade,
+      },
+      frontage: {
+        side: "both",
+        setbackM: frontageValues[0] ?? 0,
+        gapM: frontageValues[1] ?? 0,
+        endClearanceM: frontageValues[2] ?? 0,
+        maximumPlotSlopeDeg: frontageValues[3] ?? 0,
+        junctionClearanceM: frontageValues[4] ?? 0,
+        spacingJitterM: frontageValues[5] ?? 0,
+        yawJitterDeg: frontageValues[6] ?? 0,
+        seed,
+        drivewaysEnabled: this.#elements.countyDriveways.checked,
+      },
+      assetProgram,
+      seed,
+      sourceRevision: this.#store.state.revision,
+    };
+  }
+
+  #generateCountyPreview(): void {
+    const input = this.#countyBuildInput();
+    const terrain = this.#store.state.workingTerrain;
+    this.#countyBuilder.cancel();
+    this.#countyBuildResult = null;
+    this.#countyBuildProgress = null;
+    this.#countyBuildError = null;
+    this.#countyBuildInvalidated = false;
+    if (!input || !terrain) {
+      this.#countyBuildError = "Map a valid house asset and correct the highlighted county settings before generating.";
+      this.#renderCountyBuildControls();
+      this.#syncProjection();
+      return;
+    }
+    try {
+      this.#countyBuildRunning = true;
+      this.#countyBuildSourceRevision = input.sourceRevision;
+      this.#countyBuildSettingsKey = countyBuildInputKey(input);
+      this.#elements.statusMessage.textContent = "Build County started — surveying and planning without changing the project";
+      this.#countyBuilder.start(input, copyCountyBuildTerrain(terrain), {
+        onProgress: (progress) => {
+          this.#countyBuildProgress = progress;
+          this.#renderCountyBuildControls();
+        },
+        onResult: (result) => {
+          this.#countyBuildRunning = false;
+          this.#countyBuildProgress = null;
+          this.#countyBuildResult = result;
+          this.#countyBuildError = result.status === "failure"
+            ? result.diagnostics[0]?.message ?? "The county build failed."
+            : null;
+          if (result.status === "success") {
+            const plan = result.output;
+            this.#elements.statusMessage.textContent = plan.complete
+              ? `Complete county preview ready — ${plan.places.length.toLocaleString()} settlements, ${plan.roads.length.toLocaleString()} roads, ${plan.prefabs.length.toLocaleString()} buildings · project unchanged`
+              : "County preview is incomplete — review its diagnostics; project unchanged";
+          } else {
+            this.#elements.statusMessage.textContent = `Build County could not complete — ${this.#countyBuildError ?? "unknown error"}`;
+          }
+          this.#renderCountyBuildControls();
+          this.#syncProjection();
+        },
+        onError: (message) => {
+          this.#countyBuildRunning = false;
+          this.#countyBuildProgress = null;
+          this.#countyBuildResult = null;
+          this.#countyBuildError = message;
+          this.#elements.statusMessage.textContent = `Build County worker failed — ${message}`;
+          this.#renderCountyBuildControls();
+          this.#syncProjection();
+        },
+      });
+    } catch (error) {
+      this.#countyBuildRunning = false;
+      this.#countyBuildSourceRevision = null;
+      this.#countyBuildSettingsKey = null;
+      this.#countyBuildError = error instanceof Error ? error.message : String(error);
+    }
+    this.#renderCountyBuildControls();
+    this.#syncProjection();
+  }
+
+  #countyBuildInputChanged(): void {
+    if (this.#countyBuildRunning || this.#countyBuildResult || this.#countyBuildError) {
+      this.#invalidateCountyBuild();
+    } else {
+      this.#renderCountyBuildControls();
+    }
+  }
+
+  #invalidateCountyBuild(): void {
+    this.#countyBuilder.cancel();
+    this.#countyBuildResult = null;
+    this.#countyBuildProgress = null;
+    this.#countyBuildRunning = false;
+    this.#countyBuildSourceRevision = null;
+    this.#countyBuildSettingsKey = null;
+    this.#countyBuildError = null;
+    this.#countyBuildInvalidated = true;
+    this.#renderCountyBuildControls();
+    this.#syncProjection();
+  }
+
+  #cancelCountyBuild(showStatus: boolean): void {
+    const cancelled = this.#countyBuilder.cancel();
+    this.#countyBuildResult = null;
+    this.#countyBuildProgress = null;
+    this.#countyBuildRunning = false;
+    this.#countyBuildSourceRevision = null;
+    this.#countyBuildSettingsKey = null;
+    this.#countyBuildError = null;
+    this.#countyBuildInvalidated = false;
+    if (showStatus && cancelled) this.#elements.statusMessage.textContent = "Build County cancelled — project unchanged";
+    this.#renderCountyBuildControls();
+    this.#syncProjection();
+  }
+
+  #clearCountyBuild(showStatus: boolean): void {
+    this.#countyBuilder.cancel();
+    this.#countyBuildResult = null;
+    this.#countyBuildProgress = null;
+    this.#countyBuildRunning = false;
+    this.#countyBuildSourceRevision = null;
+    this.#countyBuildSettingsKey = null;
+    this.#countyBuildError = null;
+    this.#countyBuildInvalidated = false;
+    if (showStatus) this.#elements.statusMessage.textContent = "County preview cleared — project unchanged";
+    this.#renderCountyBuildControls();
+    this.#syncProjection();
+  }
+
+  #bakeCounty(): void {
+    const model = this.#store.state.model;
+    const result = this.#countyBuildResult;
+    const input = this.#countyBuildInput();
+    if (!model || result?.status !== "success" || !result.output.complete || !input) return;
+    if (
+      this.#countyBuildSourceRevision !== this.#store.state.revision
+      || this.#countyBuildSettingsKey !== countyBuildInputKey(input)
+    ) {
+      this.#invalidateCountyBuild();
+      return;
+    }
+    try {
+      const entities = materializeCountyPlan(result.output, model.all().map(({ name }) => name), newEntityId);
+      if (entities.length === 0) throw new Error("The complete county plan contains no new entities to bake.");
+      const counts = {
+        places: entities.filter(({ kind }) => kind === "place").length,
+        roads: entities.filter(({ kind }) => kind === "road").length,
+        prefabs: entities.filter(({ kind }) => kind === "prefab").length,
+      };
+      this.#selectedId = [...entities].reverse().find(({ kind }) => kind === "prefab")?.id ?? entities.at(-1)?.id ?? null;
+      this.#selectedVertex = null;
+      const networkOnly = input.outputMode === "network_only";
+      this.#store.addEntities(
+        entities,
+        networkOnly
+          ? `Build settlement network (${String(counts.roads)} roads)`
+          : `Build county (${String(counts.places)} places, ${String(counts.roads)} roads, ${String(counts.prefabs)} prefabs)`,
+      );
+      this.#countyBuilder.cancel();
+      this.#countyBuildResult = null;
+      this.#countyBuildProgress = null;
+      this.#countyBuildRunning = false;
+      this.#countyBuildSourceRevision = null;
+      this.#countyBuildSettingsKey = null;
+      this.#countyBuildError = null;
+      this.#countyBuildInvalidated = false;
+      this.#elements.statusMessage.textContent = networkOnly
+        ? `Baked settlement network atomically — ${counts.roads.toLocaleString()} roads · one undo removes the complete network`
+        : `Baked county atomically — ${counts.places.toLocaleString()} places, ${counts.roads.toLocaleString()} roads, ${counts.prefabs.toLocaleString()} prefabs · one undo removes the complete build`;
+    } catch (error) {
+      this.#countyBuildError = error instanceof Error ? error.message : String(error);
+      this.#elements.statusMessage.textContent = `County bake failed without mutation — ${this.#countyBuildError}`;
+      this.#renderCountyBuildControls();
+      this.#syncProjection();
+    }
+  }
+
+  #renderCountyBuildControls(): void {
+    const { model, workingTerrain, assetCatalog } = this.#store.state;
+    const input = model && workingTerrain ? this.#countyBuildInput() : null;
+    const result = this.#countyBuildResult;
+    const plan: CountyBuildPlan | null = result?.status === "success" ? result.output : null;
+    const summary = this.#elements.countyBuildSummary;
+    const networkOnly = this.#elements.countyOutputMode.value === "network_only";
+    if (networkOnly && this.#elements.countySourceMode.value !== "existing_places") {
+      this.#elements.countySourceMode.value = "existing_places";
+    }
+    this.#elements.countySourceMode.disabled = networkOnly;
+    this.#elements.countySiteMix.disabled = networkOnly;
+    this.#elements.countyMainPlace.disabled = this.#elements.countySourceMode.value !== "existing_places";
+    this.#elements.countyDriveways.disabled = networkOnly;
+    this.#elements.generateCountyButton.textContent = networkOnly ? "Generate Network Preview" : "Generate County Preview";
+    this.#elements.bakeCountyButton.textContent = networkOnly ? "Bake Roads" : "Bake County";
+    summary.classList.remove("has-preview", "has-warning", "has-error");
+    this.#elements.countyBackboneOrientation.disabled = !this.#elements.countyCreateBackbone.checked;
+    for (const select of this.#elements.countyAssetRoleSelects) select.disabled = networkOnly || !model || !assetCatalog;
+    if (!model || !workingTerrain) {
+      summary.textContent = "Create a terrain project to build a county.";
+    } else if (this.#countyBuildRunning) {
+      summary.textContent = this.#countyBuildProgress?.message ?? "Preparing the complete county build…";
+      summary.classList.add("has-preview");
+    } else if (this.#countyBuildError) {
+      summary.textContent = this.#countyBuildError;
+      summary.classList.add("has-error");
+    } else if (plan) {
+      const driveways = plan.roads.filter(({ role }) => role === "property_access").length;
+      summary.textContent = `${plan.complete ? "Complete" : "Incomplete"} preview · ${plan.places.length.toLocaleString()} settlements · ${plan.roads.length.toLocaleString()} roads · ${plan.junctions.length.toLocaleString()} junctions · ${plan.prefabs.length.toLocaleString()} buildings · ${driveways.toLocaleString()} driveways`;
+      summary.classList.add(plan.complete ? "has-preview" : "has-warning");
+    } else if (this.#countyBuildInvalidated) {
+      summary.textContent = "County inputs or project sources changed; generate the complete preview again.";
+      summary.classList.add("has-warning");
+    } else if (!input) {
+      summary.textContent = networkOnly
+        ? "Use visible existing places and an existing network or backbone."
+        : assetCatalog
+          ? "Map a required house asset and correct the highlighted county settings."
+          : "Load an asset catalogue and map a required house asset.";
+      summary.classList.add("has-warning");
+    } else if (input.sourceMode === "existing_places") {
+      summary.textContent = `${input.selectedExistingPlaceIds.length.toLocaleString()} visible existing places available · generate a complete county preview.`;
+    } else {
+      summary.textContent = `Survey and build ${input.desiredSettlementCount.toLocaleString()} settlements as one complete preview.`;
+    }
+
+    const progress = this.#countyBuildProgress;
+    this.#elements.countyBuildProgress.hidden = !this.#countyBuildRunning;
+    this.#elements.countyBuildProgress.max = Math.max(1, progress?.total ?? 1);
+    this.#elements.countyBuildProgress.value = Math.max(0, progress?.completed ?? 0);
+    const diagnostics = result?.status === "success" ? result.output.diagnostics
+      : result?.status === "failure" ? result.diagnostics : [];
+    this.#elements.countyBuildDiagnostics.innerHTML = diagnostics.map((diagnostic) => (
+      `<p class="county-build-diagnostic" data-severity="${diagnostic.severity}"><strong>${escapeHtml(labelFor(diagnostic.code))}</strong><br />${escapeHtml(diagnostic.message)}</p>`
+    )).join("");
+
+    const currentKey = input ? countyBuildInputKey(input) : null;
+    const currentPlan = plan?.complete
+      && this.#countyBuildSourceRevision === this.#store.state.revision
+      && currentKey !== null
+      && currentKey === this.#countyBuildSettingsKey;
+    this.#elements.generateCountyButton.disabled = !input || this.#countyBuildRunning;
+    this.#elements.cancelCountyButton.disabled = !this.#countyBuildRunning;
+    this.#elements.bakeCountyButton.disabled = !currentPlan;
+    this.#elements.clearCountyButton.disabled = !this.#countyBuildRunning
+      && !this.#countyBuildResult
+      && !this.#countyBuildError
+      && !this.#countyBuildInvalidated;
+    this.#renderCountyPreviewFilterChoices(plan);
+  }
+
+  #renderCountyPreviewFilterChoices(plan: CountyBuildPlan | null): void {
+    const previous = this.#elements.countyPreviewPlaceFilter.value;
+    const options = plan?.places ?? [];
+    this.#elements.countyPreviewPlaceFilter.innerHTML = `<option value="">All settlements</option>${options.map((place) => (
+      `<option value="${escapeHtml(place.planId)}">${escapeHtml(place.name)}</option>`
+    )).join("")}`;
+    this.#elements.countyPreviewPlaceFilter.value = options.some(({ planId }) => planId === previous) ? previous : "";
+    this.#elements.countyPreviewPlaceFilter.disabled = !plan;
+    for (const filter of this.#elements.countyPreviewClassFilters) filter.disabled = !plan;
   }
 
   #settlementProfileChanged(): void {
@@ -2034,6 +2559,7 @@ export class EditorApp {
   }
 
   #cancelInteraction(): void {
+    const cancelledCounty = this.#countyBuildRunning || this.#countyBuildResult !== null;
     const cancelledFrontage = this.#tool === "frontage" && this.#frontageStart !== null;
     const cancelledSurvey = this.#settlementSurveyResult !== null;
     const cancelledRoute = this.#tool === "route_road"
@@ -2068,7 +2594,17 @@ export class EditorApp {
     this.#settlementFrontageSourceKey = null;
     this.#settlementFrontageError = null;
     this.#settlementFrontageInvalidated = false;
-    this.#elements.statusMessage.textContent = cancelledRoute
+    this.#countyBuilder.cancel();
+    this.#countyBuildResult = null;
+    this.#countyBuildProgress = null;
+    this.#countyBuildRunning = false;
+    this.#countyBuildSourceRevision = null;
+    this.#countyBuildSettingsKey = null;
+    this.#countyBuildError = null;
+    this.#countyBuildInvalidated = false;
+    this.#elements.statusMessage.textContent = cancelledCounty
+      ? "County preview cancelled — project unchanged"
+      : cancelledRoute
       ? "Road route preview cancelled — route tool remains on"
       : cancelledSettlementFrontage
         ? "Settlement population preview cancelled — project unchanged"
@@ -2079,6 +2615,7 @@ export class EditorApp {
     this.#renderSettlementSurveyControls();
     this.#renderRoadRouteControls();
     this.#renderSettlementFrontageControls();
+    this.#renderCountyBuildControls();
     this.#syncProjection();
   }
 
@@ -2361,6 +2898,8 @@ export class EditorApp {
         running: this.#roadRouteRunning,
       },
       this.#settlementFrontagePlan,
+      this.#countyBuildResult?.status === "success" ? this.#countyBuildResult.output : null,
+      this.#countyBuildPreviewFilter(),
       this.#store.state.countyReference,
       this.#store.state.vegetationReference,
       this.#referenceLayers(),
@@ -2446,6 +2985,20 @@ export class EditorApp {
     };
   }
 
+  #countyBuildPreviewFilter(): CountyBuildPreviewFilter {
+    const enabled = new Set(this.#elements.countyPreviewClassFilters
+      .filter(({ checked }) => checked)
+      .map(({ dataset }) => dataset.countyPreviewClass));
+    return {
+      placePlanId: this.#elements.countyPreviewPlaceFilter.value || null,
+      places: enabled.has("places"),
+      roads: enabled.has("roads"),
+      prefabs: enabled.has("prefabs"),
+      junctions: enabled.has("junctions"),
+      skipped: enabled.has("skipped"),
+    };
+  }
+
   #authoringLayerChanged(): void {
     const selected = this.#selectedId ? this.#store.state.model?.get(this.#selectedId) : undefined;
     const remainsVisible = !selected || ((): boolean => {
@@ -2467,6 +3020,7 @@ export class EditorApp {
 
   #resetInteraction(): void {
     this.#roadRouter.cancel();
+    this.#countyBuilder.cancel();
     this.#selectedId = null;
     this.#selectedVertex = null;
     this.#draft = [];
@@ -2497,6 +3051,13 @@ export class EditorApp {
     this.#settlementFrontageSourceKey = null;
     this.#settlementFrontageError = null;
     this.#settlementFrontageInvalidated = false;
+    this.#countyBuildResult = null;
+    this.#countyBuildProgress = null;
+    this.#countyBuildRunning = false;
+    this.#countyBuildSourceRevision = null;
+    this.#countyBuildSettingsKey = null;
+    this.#countyBuildError = null;
+    this.#countyBuildInvalidated = false;
     this.#tool = "select";
   }
 
@@ -2506,6 +3067,7 @@ export class EditorApp {
       this.#elements.assetSelect.innerHTML = `<option value="">No catalogue loaded</option>`;
       this.#elements.assetSelect.disabled = true;
       this.#elements.assetSummary.textContent = catalog ? "Catalogue contains no assets." : "Load the shared catalogue to enable proxy placement.";
+      this.#renderCountyAssetChoices(catalog);
       return;
     }
     this.#elements.assetSelect.innerHTML = catalog.assets.map((asset) => (
@@ -2514,6 +3076,39 @@ export class EditorApp {
     if (catalog.definition(previous)) this.#elements.assetSelect.value = previous;
     this.#elements.assetSelect.disabled = false;
     this.#elements.assetSummary.textContent = `${String(catalog.assets.length)} assets · ${String(new Set(catalog.assets.map((asset) => asset.category)).size)} proxy categories`;
+    this.#renderCountyAssetChoices(catalog);
+  }
+
+  #renderCountyAssetChoices(catalog: AssetCatalog | null): void {
+    for (const select of this.#elements.countyAssetRoleSelects) {
+      const role = select.dataset.countyAssetRole;
+      if (!isCountyBuildingRole(role)) continue;
+      const previous = new Set([...select.selectedOptions].map(({ value }) => value).filter(Boolean));
+      const options = catalog?.assets ?? [];
+      select.innerHTML = `<option value="">${role === "house" ? "Select required asset" : "None"}</option>${options.map((asset) => (
+        `<option value="${escapeHtml(asset.asset_id)}">${escapeHtml(asset.display_name)} [${escapeHtml(asset.asset_id)}]</option>`
+      )).join("")}`;
+      if ([...previous].some((assetId) => catalog?.definition(assetId))) {
+        for (const option of [...select.options]) option.selected = previous.has(option.value);
+      } else if (role === "house") {
+        const selectedAsset = catalog?.definition(this.#elements.assetSelect.value);
+        const defaultHouse = selectedAsset?.category === "house"
+          ? selectedAsset
+          : options.find(({ category }) => category === "house");
+        select.value = defaultHouse?.asset_id ?? "";
+      }
+      select.disabled = !catalog || options.length === 0;
+    }
+  }
+
+  #renderCountyContextChoices(): void {
+    const previous = this.#elements.countyMainPlace.value;
+    const places = this.#store.state.model?.list("place")
+      .filter((entity): entity is PlaceRegion => entity.kind === "place" && entity.visible && entity.place_type !== "military_area") ?? [];
+    this.#elements.countyMainPlace.innerHTML = `<option value="">Auto (highest-ranked town)</option>${places.map((place) => (
+      `<option value="${escapeHtml(place.id)}">${escapeHtml(place.name)}</option>`
+    )).join("")}`;
+    this.#elements.countyMainPlace.value = places.some(({ id }) => id === previous) ? previous : "";
   }
 
   #renderWarnings(state: EditorState): void {
@@ -2791,6 +3386,38 @@ function formatMetres(value: number): string {
 
 function isSettlementSurveyProfileId(value: string): value is SettlementSurveyProfileId {
   return value === "town" || value === "village" || value === "hamlet" || value === "farm";
+}
+
+function isCountyBuildingRole(value: string | undefined): value is CountyBuildingRole {
+  return value !== undefined && COUNTY_BUILDING_ROLES.includes(value as CountyBuildingRole);
+}
+
+function isCountySourceMode(value: string): value is CountySourceMode {
+  return value === "survey" || value === "existing_places";
+}
+
+function isCountyOutputMode(value: string): value is CountyOutputMode {
+  return value === "full" || value === "network_only";
+}
+
+function isCountySiteMix(value: string): value is CountySiteMix {
+  return value === "balanced" || value === "urban" || value === "rural";
+}
+
+function isCountyStreetStyle(value: string): value is CountyStreetStyle {
+  return COUNTY_STREET_STYLES.includes(value as CountyStreetStyle);
+}
+
+function isCountyBackboneOrientation(value: string): value is CountyBackboneOrientation {
+  return value === "auto" || value === "west_east" || value === "north_south";
+}
+
+function countyBuildInputKey(input: CountyBuildInput): string {
+  return JSON.stringify(input);
+}
+
+function emptyCountyAssetProgram(): CountyAssetProgram {
+  return Object.fromEntries(COUNTY_BUILDING_ROLES.map((role) => [role, []])) as unknown as CountyAssetProgram;
 }
 
 function surveyInputNumber(input: HTMLInputElement, valid: (value: number) => boolean): number | null {

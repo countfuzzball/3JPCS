@@ -215,12 +215,16 @@ manifest v1 identifies each inner file and records absent optional entries as `n
 the inner schemas remain independent. Final terrain and actual asset resources remain
 separate exports.
 
-The implemented survey, A* road routing, and settlement-scale frontage plus the
-remaining integrated workflow are specified as independently referable `SA-0` through `SA-5`
-milestones in
+The implemented survey, A* road routing, and settlement-scale frontage are specified
+as independently referable `SA-0` through `SA-4` milestones in
 [`docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md`](docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md).
+The county backbone, multi-settlement access network, polygon-aware local streets,
+building programme, and high-level **Build County** orchestrator are implemented as `SN-0`
+through `SN-4` in
+[`docs/SETTLEMENT_NETWORK_AUTOMATION_PLAN.md`](docs/SETTLEMENT_NETWORK_AUTOMATION_PLAN.md),
+after which SA-5 provides production hardening, performance checks, and documentation.
 
-The current verification baseline is 156 Vitest tests, 9 Playwright browser flows,
+The current verification baseline is 170 Vitest tests, 10 Playwright browser flows,
 and all 45 Python reference tests.
 
 ## Source-of-truth priority

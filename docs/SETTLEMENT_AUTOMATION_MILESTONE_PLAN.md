@@ -1,6 +1,8 @@
 # Settlement automation milestone plan
 
-Status: SA-0 through SA-4 implemented; SA-5 remains planned.
+Status: SA-0 through SA-4 and SN-0 through SN-4 implemented. The county-network and
+Build County orchestration layer now precedes SA-5; see
+[`SETTLEMENT_NETWORK_AUTOMATION_PLAN.md`](SETTLEMENT_NETWORK_AUTOMATION_PLAN.md).
 
 This document defines the staged integration of terrain-based settlement surveying,
 A* road routing, and settlement-scale automatic frontage into the browser-based
@@ -12,7 +14,8 @@ The algorithmic reference is the user's earlier
 
 - `generate_settlements()` and `slope()` for candidate survey and ranking;
 - `_route_astar()` and `_smooth_polyline()` for terrain-aware road routing;
-- `_generate_local_network()` for later street-pattern ideas; and
+- `generate_roads()` and `_generate_local_network()` for the separately planned county
+  and internal street-network layer; and
 - `_plot_candidates()`, `generate_buildings()`, and
   `_generate_roadside_properties()` for settlement frontage policy.
 
@@ -28,8 +31,10 @@ After the complete plan, an editor user can:
 1. survey the imported working terrain for ranked settlement sites;
 2. accept selected sites as ordinary editable place polygons;
 3. route terrain-aware roads between chosen points or into an existing road network;
-4. populate roads inside a selected settlement with baked prefab instances; and
-5. save, reopen, edit, undo, and export every accepted result through the existing
+4. automatically connect chosen settlements and design their internal street networks
+   through the companion SN plan;
+5. populate roads inside a selected settlement with baked prefab instances; and
+6. save, reopen, edit, undo, and export every accepted result through the existing
    project and runtime formats.
 
 All generated results are baked. There are no live procedural relationships: changing
@@ -78,7 +83,8 @@ prefabs.
 | Circular building collision approximation | Replace | Keep the editor's oriented catalogue-derived footprint tests |
 | Random building dimensions and variants | Replace initially | Repeat the selected catalogue house asset; asset pools are a later extension |
 | Junction and slope clearance | Add to current frontage | Compute junctions transiently and validate plot slope using working terrain |
-| Driveway records and settlement/road roles | Defer | Ordinary lane roads are possible, but persistent driveway/role relationships require a separate decision |
+| County access and local street-network policy | Companion plan | Port transient roles and polygon-aware templates through `SETTLEMENT_NETWORK_AUTOMATION_PLAN.md` |
+| Driveway records and persistent settlement/road roles | Defer | Ordinary roads are generated, but serialized driveway/role relationships require a separate decision |
 
 ## 4. Data-contract boundary
 
@@ -112,11 +118,14 @@ SA-0 Reference baseline
        ├─ SA-2 Settlement survey
        └─ SA-3 A* road routing
             └─ SA-4 Settlement frontage population
-                 └─ SA-5 Integrated workflow and hardening
+                 └─ SN-0…SN-4 County network and Build County orchestration
+                      └─ SA-5 Production hardening, performance, and docs
 ```
 
 SA-2 and SA-3 may be developed independently after SA-1, but SA-4 assumes reusable
-road geometry from SA-1 and route/road-selection behavior established by SA-3.
+road geometry from SA-1 and route/road-selection behavior established by SA-3. The SN
+plan consumes all three implemented capabilities and fills the missing county/access/
+local-network, building-programme, and one-click orchestration layer before SA-5.
 
 ## SA-0 — Reference baseline and contract freeze
 
@@ -425,30 +434,35 @@ while retaining precise current frontage geometry and adding legacy settlement p
 - A Playwright flow previews, generates, saves/reopens, and undoes a populated
   settlement.
 
-## SA-5 — Integrated workflow, performance, and documentation
+## SA-5 — Production hardening, performance, and documentation
 
 ### Goal
 
-Make survey → road routing → frontage population a coherent production workflow and
-prove that it remains compatible with editor persistence and viewer exports.
+Harden and benchmark the coherent **Build County** workflow delivered by SN-4 and prove
+that its atomic bake remains compatible with editor persistence and viewer exports.
+SA-5 begins after SN-4 from the companion settlement-network and county-orchestration
+plan.
 
 ### Work
 
-- Present the three tools in one clearly labelled settlement-generation area without
-  hiding the existing manual authoring tools.
+- Verify that Build County and the existing manual survey, routing, network, frontage,
+  and authoring tools remain clearly accessible.
 - Ensure tool switching cancels transient previews and workers safely.
 - Add concise status, progress, cancellation, and failure reporting.
 - Exercise an end-to-end workflow:
-  1. survey and bake a settlement;
-  2. route and bake its access road;
-  3. populate eligible frontage;
+  1. configure and generate one complete county preview;
+  2. verify selected sites, backbone/access/local roads, junctions, frontage,
+     buildings, property access, and diagnostics;
+  3. bake the complete county once;
   4. manually edit generated regions, road vertices, and prefabs;
-  5. undo/redo each accepted generation step;
-  6. save and reopen the project; and
-  7. export runtime scenery v3 and the viewer ZIP bundle.
+  5. undo/redo the complete bake atomically;
+  6. exercise the separate manual tools;
+  7. save and reopen the project; and
+  8. export runtime scenery v3 and the viewer ZIP bundle.
 - Add a deterministic generation benchmark over a representative county terrain.
-- Track candidate attempts, A* visited nodes, worker time, accepted/skipped frontage,
-  preview Object3D count, and project serialization size.
+- Track candidate attempts, A* visited nodes, worker time, local streets, junctions,
+  accepted/skipped frontage, driveways, preview Object3D count, bake/undo time, and
+  project serialization size.
 - Document the tools, coordinate/slope conventions, baked behavior, and limitations.
 
 ### Performance safeguards
@@ -473,16 +487,14 @@ prove that it remains compatible with editor persistence and viewer exports.
 
 ## 6. Explicitly deferred work
 
-These are not required to complete SA-0 through SA-5:
+These are not required to complete the SA and companion SN plans:
 
 - first-class `hamlet` project/runtime type;
 - persistent settlement centre, radius, style, seed, or generation recipe;
 - live regeneration after terrain, road, settlement, or asset changes;
 - exact reproduction of the legacy fixed world, names, residents, or billboards;
-- automatic planned/organic/roadside/agricultural local street templates;
-- mixed building asset pools, zoning, shops, civic buildings, sheds, barns, warehouses,
-  floors, or variants;
-- generated driveways or persistent driveway-to-building relationships;
+- zoning and persistent building-role/floor/variant fields;
+- persistent driveway-to-building relationships;
 - persistent road roles, settlement membership, junction records, or plot-side fields;
 - bridges, tunnels, switchbacks, road grading/deformation, cut-and-fill, or retaining
   structures;
@@ -498,11 +510,12 @@ schema and migration proposal rather than silently overloading existing fields.
 
 The settlement-automation initiative is complete when:
 
-- SA-0 through SA-5 acceptance criteria pass;
+- SA-0 through SA-5 and SN-0 through SN-4 acceptance criteria pass;
 - the workflow is deterministic, preview-first, cancellable, and non-destructive until
   accepted;
 - accepted output consists exclusively of valid existing entities;
-- each accepted generation action is independently undoable;
+- the Build County bake is one atomic undoable action, while specialist manual
+  generation actions remain independently undoable;
 - generated objects remain ordinary manual-editing targets afterward;
 - project and runtime schemas have not changed unless the user separately approves a
   documented schema proposal; and
