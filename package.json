@@ -1,6 +1,7 @@
 {
   "name": "polygon-county-scenery-editor-web",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",
   "scripts": {

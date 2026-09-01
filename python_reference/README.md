@@ -28,3 +28,9 @@ python -m pytest -q
 
 Python cache directories are generated locally, ignored by Git, and never form part
 of either application contract.
+
+## License
+
+This preserved reference implementation is licensed under the GNU General Public
+License version 3 or later (`GPL-3.0-or-later`). See the repository
+[LICENSE](../LICENSE).

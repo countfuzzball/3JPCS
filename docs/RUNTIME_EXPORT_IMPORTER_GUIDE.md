@@ -1,7 +1,7 @@
 # Polygon County Scenery Editor runtime exports: importer/consumer guide
 
 This document is a self-contained, importer-facing description of the runtime exports
-produced by Polygon County Scenery Editor v1.0. It is intended for implementing a
+produced by Polygon County Scenery Editor v2.0. It is intended for implementing a
 terrain viewer, Godot/Unity/Three.js importer, conversion tool, or validation pipeline
 without reading the editable `.scenery.json` project format.
 

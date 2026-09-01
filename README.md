@@ -4,13 +4,13 @@ This repository now contains two deliberately separate implementations:
 
 - the preserved Python/Tkinter v0.2 prototype, which remains the behavioural and
   interchange-contract reference; and
-- the browser-based Vite/TypeScript/Three.js editor, released as **version 1.0.0** with
+- the browser-based Vite/TypeScript/Three.js editor, released as **version 2.0.0** with
   the completed Milestone 0–5 rewrite (application shell, terrain/native geometry,
   prefab/vegetation authoring, browser persistence and relinking, reference layers,
-  versioned exports, and the full seeded performance benchmark), followed by a baked
-  road-frontage house generator, deterministic terrain settlement survey, and
-  worker-backed terrain-aware A* road routing, and deterministic settlement-wide
-  multi-road frontage population.
+  versioned exports, and the full seeded performance benchmark), baked road-frontage
+  generation, deterministic terrain settlement survey, worker-backed terrain-aware A*
+  routing, settlement-wide frontage population, and the high-level Build County
+  settlement-network orchestrator.
 
 See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
 its verified commands, architecture, browser file limitations, and milestone status.
@@ -145,3 +145,10 @@ Vegetation clearance/exclusion around objects, custom pad target elevations, ter
 brushes, road deformation, procedural settlement/farm/base generation, automatic
 frontage population in the Tk prototype, generated crops/livestock, road or hedge
 meshes, direct GLB/3D rendering, and engine-specific integration remain outside v0.2.
+
+## License
+
+Polygon County Scenery Editor, including the Three.js rewrite and preserved Python
+reference implementation, is free software licensed under the GNU General Public
+License version 3 or, at your option, any later version (`GPL-3.0-or-later`). See
+[LICENSE](LICENSE). Third-party dependencies retain their respective licences.

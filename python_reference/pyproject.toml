@@ -2,6 +2,7 @@
 name = "polygon-county-scenery-editor"
 version = "0.2.0"
 description = "Standalone Tkinter authoring tool for human scenery over Polygon County terrain"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "Pillow>=10.0"]
 

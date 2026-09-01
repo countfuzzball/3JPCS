@@ -1,10 +1,10 @@
 # Polygon County Scenery Editor — Three.js rewrite
 
-This is the **1.0.0 release** of the genuine static browser rewrite, completed through
-**Milestone 5**, the baked road-frontage house generator, and settlement-automation
-milestone **SA-4**. The Python/Tkinter
-application remains checked in under `python_reference/` as the behavioural and
-data-contract reference.
+This is the **2.0.0 release** of the genuine static browser rewrite, completed through
+**Milestone 5**, the baked road-frontage house generator, settlement-automation
+milestone **SA-4**, and settlement-network orchestration milestone **SN-4**. The
+Python/Tkinter application remains checked in under `python_reference/` as the
+behavioural and data-contract reference.
 
 ## Run and verify
 
@@ -288,3 +288,8 @@ disposes replaced geometry, textures, and materials.
 - Height and slope queries are triangle-consistent, never bilinear.
 - Editable yaw is clockwise-positive from local front `-Z`; a Three.js object uses the
   negative yaw radians. The `0/90/180/270` mapping and front marker are covered.
+
+## License
+
+The Three.js editor is licensed under the GNU General Public License version 3 or
+later (`GPL-3.0-or-later`). See [LICENSE](LICENSE).
