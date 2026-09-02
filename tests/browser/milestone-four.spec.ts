@@ -54,20 +54,30 @@ test("opens with relinks, imports references, converts county, saves, and export
   expect(vegetation.objects[0]?.terrain_y_m).not.toBe(10);
 
   const bundle = await downloadFrom(page, () => page.getByRole("button", { name: "Viewer bundle (.zip)" }).click());
-  expect(bundle.suggestedFilename()).toBe("Milestone-Four-County.viewer-bundle-v1.zip");
+  expect(bundle.suggestedFilename()).toBe("Milestone-Four-County.viewer-bundle-v2.zip");
   const bundleFiles = unzipSync(await readFile(await bundle.path()));
   const manifest = JSON.parse(strFromU8(bundleFiles["bundle_manifest.json"]!)) as {
+    schema_version: number;
     contents: Record<string, { path: string } | null>;
   };
+  expect(manifest.schema_version).toBe(2);
   expect(manifest.contents.runtime_scenery?.path).toBe("Milestone-Four-County.runtime-scenery-v3.json");
+  expect(manifest.contents.final_heightmap?.path).toBe("Milestone-Four-County.final-heightmap.png");
+  expect(manifest.contents.terrain_metadata?.path).toBe("Milestone-Four-County.final-heightmap.json");
   expect(manifest.contents.resampled_vegetation?.path).toBe("Milestone-Four-County.resampled-vegetation-v1.json");
   expect(manifest.contents.asset_catalog?.path).toBe("Milestone-Four-County.asset-catalog-v3.json");
   expect(Object.keys(bundleFiles).sort()).toEqual([
     "Milestone-Four-County.asset-catalog-v3.json",
+    "Milestone-Four-County.final-heightmap.json",
+    "Milestone-Four-County.final-heightmap.png",
     "Milestone-Four-County.resampled-vegetation-v1.json",
     "Milestone-Four-County.runtime-scenery-v3.json",
     "bundle_manifest.json",
   ].sort());
+  expect([...bundleFiles["Milestone-Four-County.final-heightmap.png"]!.subarray(0, 8)])
+    .toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  expect(JSON.parse(strFromU8(bundleFiles["Milestone-Four-County.final-heightmap.json"]!)))
+    .toMatchObject({ elevation_points: { x: 3, z: 3, total: 9 } });
 
   const terrainDownloads = downloadsFrom(page, 2);
   await page.getByRole("button", { name: "Final terrain PNG + JSON" }).click();

@@ -10,11 +10,12 @@ import { AssetCatalog } from "../../src/model/assetCatalog";
 import { ProjectModel } from "../../src/model/ProjectModel";
 import { parseVegetationReference } from "../../src/model/references";
 import { WorkingTerrain } from "../../src/terrain/WorkingTerrain";
+import { finalTerrainArtifacts } from "../../src/io/finalExport";
 import { fixtureTerrain } from "../helpers/fixtures";
 import { vegetationDocument } from "../helpers/referenceFixtures";
 
-describe("viewer bundle v1", () => {
-  it("packages runtime v3, resampled vegetation v1, and the loaded asset catalogue", async () => {
+describe("viewer bundle v2", () => {
+  it("packages final terrain, runtime v3, resampled vegetation v1, and the loaded asset catalogue", async () => {
     const base = await fixtureTerrain();
     const working = WorkingTerrain.compose(base, []);
     const model = project("Bundle County");
@@ -36,11 +37,13 @@ describe("viewer bundle v1", () => {
       AssetCatalog.fromDocument(catalogDocument),
     );
 
-    expect(archive.filename).toBe("Bundle-County.viewer-bundle-v1.zip");
+    expect(archive.filename).toBe("Bundle-County.viewer-bundle-v2.zip");
     expect([...archive.bytes.slice(0, 4)]).toEqual([80, 75, 3, 4]);
     const files = unzipSync(archive.bytes);
     expect(Object.keys(files).sort()).toEqual([
       "Bundle-County.asset-catalog-v3.json",
+      "Bundle-County.final-heightmap.json",
+      "Bundle-County.final-heightmap.png",
       "Bundle-County.resampled-vegetation-v1.json",
       "Bundle-County.runtime-scenery-v3.json",
       VIEWER_BUNDLE_MANIFEST_PATH,
@@ -50,16 +53,29 @@ describe("viewer bundle v1", () => {
     expect(manifest).toEqual(archive.manifest);
     expect(manifest).toMatchObject({
       format: VIEWER_BUNDLE_FORMAT,
-      schema_version: 1,
+      schema_version: 2,
       project_name: "Bundle County",
       contents: {
         runtime_scenery: { path: "Bundle-County.runtime-scenery-v3.json", schema_version: 3 },
+        final_heightmap: {
+          path: "Bundle-County.final-heightmap.png",
+          media_type: "image/png",
+          schema_version: null,
+        },
+        terrain_metadata: {
+          path: "Bundle-County.final-heightmap.json",
+          media_type: "application/json",
+          schema_version: null,
+        },
         resampled_vegetation: { path: "Bundle-County.resampled-vegetation-v1.json", schema_version: 1 },
         asset_catalog: { path: "Bundle-County.asset-catalog-v3.json", schema_version: 3 },
       },
     });
     const runtime = json(files, manifest.contents.runtime_scenery.path) as Record<string, unknown>;
     expect(runtime.schema_version).toBe(3);
+    const terrainArtifacts = await finalTerrainArtifacts(working);
+    expect(files[manifest.contents.final_heightmap.path]).toEqual(terrainArtifacts.png);
+    expect(json(files, manifest.contents.terrain_metadata.path)).toEqual(terrainArtifacts.metadata);
     const exportedVegetation = json(
       files,
       manifest.contents.resampled_vegetation!.path,
@@ -79,8 +95,16 @@ describe("viewer bundle v1", () => {
     const files = unzipSync(archive.bytes);
     const manifest = json(files, VIEWER_BUNDLE_MANIFEST_PATH) as ViewerBundleManifest;
 
-    expect(archive.filename).toBe("scenery.viewer-bundle-v1.zip");
-    expect(Object.keys(files).sort()).toEqual([VIEWER_BUNDLE_MANIFEST_PATH, "scenery.runtime-scenery-v3.json"]);
+    expect(archive.filename).toBe("scenery.viewer-bundle-v2.zip");
+    expect(Object.keys(files).sort()).toEqual([
+      VIEWER_BUNDLE_MANIFEST_PATH,
+      "scenery.final-heightmap.json",
+      "scenery.final-heightmap.png",
+      "scenery.runtime-scenery-v3.json",
+    ].sort());
+    expect(manifest.schema_version).toBe(2);
+    expect(manifest.contents.final_heightmap.path).toBe("scenery.final-heightmap.png");
+    expect(manifest.contents.terrain_metadata.path).toBe("scenery.final-heightmap.json");
     expect(manifest.contents.resampled_vegetation).toBeNull();
     expect(manifest.contents.asset_catalog).toBeNull();
   });

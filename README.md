@@ -53,10 +53,10 @@ not permanent browser filesystem permissions.
 - Final terrain as a 16-bit greyscale PNG with matching metadata JSON.
 - Runtime scenery v3 JSON.
 - Resampled imported vegetation v1 JSON.
-- A viewer bundle ZIP containing its manifest and the currently available runtime
-  scenery, vegetation, and catalogue documents.
+- A viewer bundle v2 ZIP containing its manifest, final heightmap and metadata,
+  runtime scenery, and—when loaded—resampled vegetation and catalogue documents.
 
-The viewer bundle deliberately does not embed the final terrain, GLB models, textures,
+The viewer bundle deliberately does not embed GLB models, textures, source NPY data,
 or other asset binaries. See
 [the runtime export/importer guide](docs/RUNTIME_EXPORT_IMPORTER_GUIDE.md) for the
 complete consumer contract.

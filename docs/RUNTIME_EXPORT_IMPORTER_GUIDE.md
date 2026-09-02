@@ -55,7 +55,7 @@ The words **MUST**, **SHOULD**, and **MAY** below describe importer behavior.
 
 ## 1. Exported files
 
-The Scenery Editor exposes four individual export commands and one ZIP bundle command:
+The Scenery Editor exposes five individual export commands and one ZIP bundle command:
 
 | Export | Browser download filename | Identification | Current version |
 | --- | --- | --- | --- |
@@ -64,7 +64,7 @@ The Scenery Editor exposes four individual export commands and one ZIP bundle co
 | Runtime scenery | `<project>.runtime-scenery-v3.json` | Downloaded JSON | Fixed format plus `schema_version == 3` |
 | Legacy runtime scenery | `<project>.runtime-scenery-v2.json` | Downloaded JSON | Fixed format plus `schema_version == 2` |
 | Resampled imported vegetation | `<project>.resampled-vegetation-v1.json` | Downloaded JSON | `schema_version == 1` |
-| Viewer bundle | `<project>.viewer-bundle-v1.zip` | Root `bundle_manifest.json` | Manifest schema v1 |
+| Viewer bundle | `<project>.viewer-bundle-v2.zip` | Root `bundle_manifest.json` | Manifest schema v2 |
 
 The commands are:
 
@@ -97,13 +97,17 @@ perform the consistency checks in section 10. For a ZIP bundle, the manifest exp
 associates its entries with the editor project name, although it does not add an export
 batch ID to the inner contracts.
 
-### Viewer bundle v1
+### Viewer bundle v2
 
-The ZIP contains root-level UTF-8 JSON files only:
+The ZIP contains the complete set of current viewer-consumable exports. Entries remain
+at the archive root and use the exact bytes/documents produced by their corresponding
+individual exporters:
 
 ```text
-<project>.viewer-bundle-v1.zip
+<project>.viewer-bundle-v2.zip
 ├── bundle_manifest.json
+├── <project>.final-heightmap.png
+├── <project>.final-heightmap.json
 ├── <project>.runtime-scenery-v3.json
 ├── <project>.resampled-vegetation-v1.json  (only when a reference is loaded)
 └── <project>.asset-catalog-v3.json         (only when a catalogue is loaded)
@@ -114,7 +118,7 @@ The manifest has this shape:
 ```json
 {
   "format": "polygon-county-viewer-bundle",
-  "schema_version": 1,
+  "schema_version": 2,
   "project_name": "Example County",
   "contents": {
     "runtime_scenery": {
@@ -122,6 +126,16 @@ The manifest has this shape:
       "media_type": "application/json",
       "format": "polygon-county-runtime-scenery",
       "schema_version": 3
+    },
+    "final_heightmap": {
+      "path": "Example-County.final-heightmap.png",
+      "media_type": "image/png",
+      "schema_version": null
+    },
+    "terrain_metadata": {
+      "path": "Example-County.final-heightmap.json",
+      "media_type": "application/json",
+      "schema_version": null
     },
     "resampled_vegetation": {
       "path": "Example-County.resampled-vegetation-v1.json",
@@ -139,9 +153,15 @@ The manifest has this shape:
 ```
 
 An absent optional source is represented by `null`, not by a missing manifest key or
-an empty placeholder file. Runtime scenery is always present. The ZIP does not contain
-the final heightmap, terrain metadata, editable project, source NPY, GLBs, textures, or
-other asset binaries.
+an empty placeholder file. Runtime scenery, the final heightmap, and terrain metadata
+are always present. The ZIP does not contain the editable project, legacy runtime
+scenery v2, source NPY, GLBs, textures, or other asset binaries. Runtime v2 remains an
+explicit, potentially lossy compatibility export rather than a second competing
+runtime document inside the bundle.
+
+Viewer bundle v1 contained runtime scenery plus optional vegetation and catalogue JSON
+only. Importers may continue to recognize v1 when backward compatibility is required,
+but must obtain its final terrain and metadata separately. New exports use v2.
 
 The bundle is a transport container, not a new combined scenery schema. Consumers
 **MUST** validate every non-null entry against its own advertised contract. In
@@ -985,10 +1005,12 @@ between independently exported files is therefore user/bundle managed.
 ## 11. Recommended importer algorithm
 
 1. If given a viewer-bundle ZIP, locate the single root `bundle_manifest.json`, require
-   its exact format and schema v1, apply archive-safety checks, and resolve every
-   non-null listed entry. Otherwise accept the equivalent JSON files independently.
-2. Ask the user for the separately exported final terrain PNG and locate its same-stem
-   metadata JSON.
+   its exact format and schema v2, apply archive-safety checks, and resolve every
+   non-null listed entry. Otherwise accept the equivalent files independently. A
+   compatibility importer may also recognize bundle v1, whose terrain pair must be
+   supplied separately.
+2. Resolve the final terrain PNG and its same-stem metadata JSON from the v2 bundle, or
+   ask the user for the two individual exports when no v2 bundle was supplied.
 3. Parse metadata and validate all arithmetic relationships.
 4. Decode the PNG through a 16-bit single-channel path.
 5. Verify PNG dimensions against `elevation_points.x` and `.z`.
@@ -1115,7 +1137,7 @@ The runtime products do not contain:
 - the exact float32 working array as a separate NPY;
 - prefab terrain-pad settings or composition order;
 - an asset catalogue inside the individual runtime or vegetation documents (viewer
-  bundle v1 may package a loaded catalogue as its own unchanged JSON entry);
+  bundle v2 may package a loaded catalogue as its own unchanged JSON entry);
 - GLB paths, engine resource paths, materials, or asset binaries;
 - prefab planning envelopes, authoritative mesh bounds, pivot corrections, or
   foundation depth;

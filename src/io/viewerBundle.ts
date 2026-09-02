@@ -1,5 +1,5 @@
 import { strToU8, zip, type Zippable } from "fflate";
-import { resampledVegetationDocument } from "./finalExport";
+import { finalTerrainArtifacts, resampledVegetationDocument } from "./finalExport";
 import { runtimeSceneryV3Document } from "./runtimeExport";
 import {
   ASSET_CATALOG_FORMAT,
@@ -11,13 +11,13 @@ import type { VegetationReference } from "../model/references";
 import type { WorkingTerrain } from "../terrain/WorkingTerrain";
 
 export const VIEWER_BUNDLE_FORMAT = "polygon-county-viewer-bundle";
-export const VIEWER_BUNDLE_SCHEMA_VERSION = 1;
+export const VIEWER_BUNDLE_SCHEMA_VERSION = 2;
 export const VIEWER_BUNDLE_MANIFEST_PATH = "bundle_manifest.json";
 
 interface BundleFileDescriptor {
   readonly path: string;
-  readonly media_type: "application/json";
-  readonly schema_version: number;
+  readonly media_type: "application/json" | "image/png";
+  readonly schema_version: number | null;
   readonly format?: string;
 }
 
@@ -27,6 +27,8 @@ export interface ViewerBundleManifest {
   readonly project_name: string;
   readonly contents: {
     readonly runtime_scenery: BundleFileDescriptor;
+    readonly final_heightmap: BundleFileDescriptor;
+    readonly terrain_metadata: BundleFileDescriptor;
     readonly resampled_vegetation: BundleFileDescriptor | null;
     readonly asset_catalog: BundleFileDescriptor | null;
   };
@@ -46,9 +48,14 @@ export async function viewerBundleArchive(
 ): Promise<ViewerBundleArchive> {
   const stem = fileStem(model.name);
   const runtimePath = `${stem}.runtime-scenery-v3.json`;
+  const heightmapPath = `${stem}.final-heightmap.png`;
+  const terrainMetadataPath = `${stem}.final-heightmap.json`;
   const vegetationPath = vegetation ? `${stem}.resampled-vegetation-v1.json` : null;
   const catalogPath = catalog ? `${stem}.asset-catalog-v3.json` : null;
-  const runtimeDocument = await runtimeSceneryV3Document(model, terrain, catalog);
+  const [runtimeDocument, terrainArtifacts] = await Promise.all([
+    runtimeSceneryV3Document(model, terrain, catalog),
+    finalTerrainArtifacts(terrain),
+  ]);
   const manifest: ViewerBundleManifest = {
     format: VIEWER_BUNDLE_FORMAT,
     schema_version: VIEWER_BUNDLE_SCHEMA_VERSION,
@@ -59,6 +66,16 @@ export async function viewerBundleArchive(
         media_type: "application/json",
         format: "polygon-county-runtime-scenery",
         schema_version: 3,
+      },
+      final_heightmap: {
+        path: heightmapPath,
+        media_type: "image/png",
+        schema_version: null,
+      },
+      terrain_metadata: {
+        path: terrainMetadataPath,
+        media_type: "application/json",
+        schema_version: null,
       },
       resampled_vegetation: vegetationPath ? {
         path: vegetationPath,
@@ -76,6 +93,8 @@ export async function viewerBundleArchive(
   const files: Zippable = {
     [VIEWER_BUNDLE_MANIFEST_PATH]: jsonBytes(manifest),
     [runtimePath]: jsonBytes(runtimeDocument),
+    [heightmapPath]: terrainArtifacts.png,
+    [terrainMetadataPath]: jsonBytes(terrainArtifacts.metadata),
   };
   if (vegetation && vegetationPath) {
     files[vegetationPath] = jsonBytes(resampledVegetationDocument(vegetation, terrain));
@@ -83,7 +102,7 @@ export async function viewerBundleArchive(
   if (catalog && catalogPath) files[catalogPath] = jsonBytes(catalog.toDocument());
   return {
     bytes: await compress(files),
-    filename: `${stem}.viewer-bundle-v1.zip`,
+    filename: `${stem}.viewer-bundle-v2.zip`,
     manifest,
   };
 }

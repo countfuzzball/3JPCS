@@ -727,7 +727,7 @@ export class EditorApp {
         vegetationReference ? `${vegetationReference.objects.length.toLocaleString()} imported vegetation records` : null,
         assetCatalog ? `${assetCatalog.assets.length.toLocaleString()} asset catalogue entries` : null,
       ].filter((value): value is string => value !== null);
-      this.#elements.statusMessage.textContent = `Exported viewer bundle with runtime scenery v3${optionalContents.length > 0 ? ` · ${optionalContents.join(" · ")}` : ""}`;
+      this.#elements.statusMessage.textContent = `Exported complete viewer bundle with final terrain + metadata · runtime scenery v3${optionalContents.length > 0 ? ` · ${optionalContents.join(" · ")}` : ""}`;
     } catch (error) {
       this.#elements.statusMessage.textContent = `Viewer bundle export failed — ${error instanceof Error ? error.message : String(error)}`;
     } finally {
