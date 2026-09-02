@@ -62,6 +62,36 @@ describe("settlement candidate evaluation", () => {
     });
   });
 
+  it("rejects fully submerged sites and shoreline crossings", () => {
+    expect(evaluateSettlementSite(
+      analyticTerrain({ heightAt: () => -5 }),
+      [1_000, 1_000],
+      200,
+      10,
+      0,
+      0,
+      [],
+    )).toEqual({ status: "rejected", reason: "below_sea_level" });
+
+    const shoreline = analyticTerrain({
+      heightAt: (x) => x >= 1_190 ? -5 : 10,
+    });
+    expect(evaluateSettlementSite(shoreline, [1_000, 1_000], 200, 10, 0, 0, []))
+      .toEqual({ status: "rejected", reason: "below_sea_level" });
+  });
+
+  it("keeps terrain exactly at the declared shoreline eligible", () => {
+    expect(evaluateSettlementSite(
+      analyticTerrain({ heightAt: () => 0 }),
+      [1_000, 1_000],
+      200,
+      10,
+      0,
+      0,
+      [],
+    ).status).toBe("accepted");
+  });
+
   it("enforces edge-to-polygon separation from existing places", () => {
     const terrain = analyticTerrain();
     const existing = place([
@@ -132,6 +162,17 @@ describe("settlement survey", () => {
     expect(result.reason).toBe("no_valid_result");
     expect(result.rejections.find(({ reason }) => reason === "slope")?.count).toBe(17);
     expect(result.diagnostics[0]?.code).toBe("no_valid_site");
+  });
+
+  it("reports below-sea-level rejection when every candidate is submerged", () => {
+    const result = runSettlementSurvey(analyticTerrain({ heightAt: () => -1 }), [], {
+      ...BASE_SETTINGS,
+      attemptBudget: 17,
+    });
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") return;
+    expect(result.reason).toBe("no_valid_result");
+    expect(result.rejections.find(({ reason }) => reason === "below_sea_level")?.count).toBe(17);
   });
 
   it("rejects settings whose radius-aware sampling domain cannot fit the world", () => {

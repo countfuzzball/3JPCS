@@ -252,8 +252,9 @@ The legacy defaults become editable starting profiles rather than fixed world po
 - Sample candidate centres inside radius-aware world bounds.
 - Evaluate the centre and a deterministic set of samples across the proposed site,
   rather than trusting only the centre slope.
-- Hard-reject candidates that exceed slope, edge, separation, or existing-place
-  constraints.
+- Hard-reject candidates whose interior samples or 32-point boundary fall below the
+  declared terrain sea level, or that exceed slope, edge, separation, or
+  existing-place constraints.
 - Rank valid candidates by normalized terrain roughness, edge preference, elevation
   preference, and deterministic tie-breaking.
 - Do not silently produce fallback sites when the attempt budget finds no valid result.
@@ -277,7 +278,7 @@ The legacy defaults become editable starting profiles rather than fixed world po
 - Accepted regions validate, save, reopen, and undo/redo through existing code.
 - No-valid-site and exhausted-attempt cases are visible and non-destructive.
 - Unit tests cover profiles, conversions between grade and degrees, ranking,
-  separation, boundary rejection, determinism, and failure.
+  separation, submerged interior/boundary rejection, determinism, and failure.
 - A Playwright flow surveys terrain, accepts a site, undoes it, and restores it.
 
 ## SA-3 — A* terrain-aware road routing

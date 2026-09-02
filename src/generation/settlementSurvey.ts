@@ -65,6 +65,7 @@ export interface SettlementSurveySettings {
 export type SettlementSurveyRejectionReason =
   | "outside_world"
   | "edge_clearance"
+  | "below_sea_level"
   | "slope"
   | "existing_place_separation"
   | "candidate_separation";
@@ -140,6 +141,7 @@ const SITE_SAMPLE_RINGS: readonly (readonly [radiusFraction: number, sampleCount
   [0.9, 16],
 ];
 const BOUNDARY_VERTEX_COUNT = 32;
+const ELEVATION_EPSILON_M = 1e-7;
 
 export function gradeToDegrees(grade: number): number {
   if (!Number.isFinite(grade) || grade < 0) throw new ContractError("slope grade must be finite and non-negative");
@@ -218,6 +220,13 @@ export function evaluateSettlementSite(
     return { status: "rejected", reason: "outside_world" };
   }
   const elevations = samples.map(([x, z]) => terrain.heightAt(x, z));
+  const isBelowSeaLevel = (elevationM: number): boolean => (
+    elevationM + ELEVATION_EPSILON_M < terrain.seaLevelM
+  );
+  if (elevations.some(isBelowSeaLevel)
+    || settlementBoundary(center, radiusM).some(([x, z]) => isBelowSeaLevel(terrain.heightAt(x, z)))) {
+    return { status: "rejected", reason: "below_sea_level" };
+  }
   const slopes = samples.map(([x, z]) => terrain.slopeAt(x, z));
   const maximumMeasuredSlopeDeg = Math.max(...slopes);
   if (maximumMeasuredSlopeDeg > maximumSlopeDeg + 1e-7) {
@@ -435,12 +444,14 @@ function validateTerrain(terrain: TerrainSurface): void {
   ] as const) {
     if (!Number.isFinite(value) || value <= 0) throw new ContractError(`${label} must be finite and positive`);
   }
+  if (!Number.isFinite(terrain.seaLevelM)) throw new ContractError("terrain sea level must be finite");
 }
 
 function rejectionSummary(counts: ReadonlyMap<SettlementSurveyRejectionReason, number>): readonly GenerationRejectionCount[] {
   return ([
     "outside_world",
     "edge_clearance",
+    "below_sea_level",
     "slope",
     "existing_place_separation",
     "candidate_separation",

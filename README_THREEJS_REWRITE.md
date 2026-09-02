@@ -173,8 +173,9 @@ road edits do not reposition them, and no project/runtime schema change is invol
 
 Settlement-automation SA-2 adds a deterministic **Settlement survey** panel over the
 current working terrain. Town, village, hamlet-sized, and farm profiles seed editable
-radius and slope settings. Each proposed site samples the centre plus two fixed rings,
-hard-rejects excessive slope, world-edge, and existing-place conflicts, then ranks
+radius and slope settings. Each proposed site samples the centre plus two fixed rings
+and checks its full 32-point boundary against the declared sea level. It hard-rejects
+submerged terrain, excessive slope, world-edge, and existing-place conflicts, then ranks
 terrain roughness, edge preference, and optional lowland-reference elevation. Ranked
 regions remain transient and batched until selected candidates are accepted as normal
 unlocked 32-point place polygons in one undoable command. Changing settings, working

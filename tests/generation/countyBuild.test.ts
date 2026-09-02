@@ -119,6 +119,24 @@ describe("county build planning", () => {
     expect(JSON.stringify(input.existingPlaces)).toBe(before);
   });
 
+  it("does not build an automatically surveyed county on submerged terrain", () => {
+    const base = countyInput();
+    const input: CountyBuildInput = {
+      ...base,
+      sourceMode: "survey",
+      desiredSettlementCount: 1,
+      selectedExistingPlaceIds: [],
+      existingPlaces: [],
+    };
+    const result = buildCountyPlan(
+      { operationId: 11, kind: "county_build", seed: input.seed, input },
+      flatTerrain(-1),
+    );
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") return;
+    expect(result.reason).toBe("no_valid_result");
+  });
+
   it("makes whole-build route budget exhaustion explicit and non-bakeable", () => {
     const base = countyInput();
     const input: CountyBuildInput = { ...base, budgets: { ...base.budgets, maximumRoutes: 1 } };
@@ -196,16 +214,18 @@ function place(id: string, name: string, type: "town" | "village", x0: number, z
   };
 }
 
-function flatTerrain(): CountyBuildTerrainSnapshot {
+function flatTerrain(heightM = 0): CountyBuildTerrainSnapshot {
   const pointCountX = 51;
   const pointCountZ = 51;
+  const heights = new Float32Array(pointCountX * pointCountZ);
+  heights.fill(heightM);
   return {
     worldWidthM: 1000,
     worldDepthM: 1000,
     spacingM: 20,
     pointCountX,
     pointCountZ,
-    heights: new Float32Array(pointCountX * pointCountZ),
+    heights,
     minimumElevationM: -100,
     seaLevelM: 0,
     lowlandReferenceElevationM: 0,
