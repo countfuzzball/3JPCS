@@ -1,150 +1,292 @@
 # Polygon County Scenery Editor
 
-This repository now contains two deliberately separate implementations:
+Polygon County Scenery Editor is a local, browser-based tool for authoring roads,
+places, land use, buildings, and vegetation over an existing Polygon County terrain.
+It uses TypeScript, Three.js, and WebGL to keep large scenery projects interactive and
+exports engine-neutral files for a separate viewer or game runtime.
 
-- the preserved Python/Tkinter v0.2 prototype, which remains the behavioural and
-  interchange-contract reference; and
-- the browser-based Vite/TypeScript/Three.js editor, released as **version 2.0.0** with
-  the completed Milestone 0–5 rewrite (application shell, terrain/native geometry,
-  prefab/vegetation authoring, browser persistence and relinking, reference layers,
-  versioned exports, and the full seeded performance benchmark), baked road-frontage
-  generation, deterministic terrain settlement survey, worker-backed terrain-aware A*
-  routing, settlement-wide frontage population, and the high-level Build County
-  settlement-network orchestrator.
+The primary application is the version 2.0.0 web editor. A preserved Python/Tkinter
+prototype is included under `python_reference/` as a behavioural and file-format
+reference; it is not required to run the web application.
 
-See [README_THREEJS_REWRITE.md](README_THREEJS_REWRITE.md) for the web application,
-its verified commands, architecture, browser file limitations, and milestone status.
+## What the editor does
 
-## Run the web rewrite
+- Loads a float32 NPY terrain and its matching terrain descriptor without modifying
+  the source files.
+- Authors editable place and land-use polygons, roads, hedgerows, prefab instances,
+  and manually placed native vegetation.
+- Loads an asset catalogue and previews catalogue prefabs as GLB models when their
+  resources are available.
+- Imports large, non-editable vegetation-v1 placement datasets and resamples their
+  runtime elevations against the working terrain.
+- Applies optional, non-destructive terrain pads beneath prefabs.
+- Provides undo/redo, object locking, visibility controls, project save/open, and
+  browser file relinking.
+- Generates deterministic settlement surveys, terrain-aware A* roads, road frontage,
+  internal street networks, and complete multi-settlement county plans.
+- Previews generated work before baking it as ordinary editable project records.
+- Uses chunked and instanced GPU rendering for the full 32,498-record vegetation
+  benchmark rather than creating one Three.js object per vegetation record.
+
+The editor is an authoring application, not the final Polygon County viewer. Exported
+runtime data describes what should exist and where; the consuming viewer remains
+responsible for its own final road meshes, junction meshes, asset loading, materials,
+lighting, collision, and gameplay behaviour.
+
+## Inputs and outputs
+
+### Typical inputs
+
+- A source float32 `.npy` terrain heightfield.
+- The matching terrain JSON descriptor.
+- An optional asset catalogue v3.
+- Optional imported vegetation placement data v1.
+- Optional county-feature reference data.
+
+The browser stores file handles only where the browser permits it. After reopening a
+project, the editor may ask you to relink source files. Stored source paths are hints,
+not permanent browser filesystem permissions.
+
+### Main outputs
+
+- Editable scenery project v4 JSON.
+- Final terrain as a 16-bit greyscale PNG with matching metadata JSON.
+- Runtime scenery v3 JSON.
+- Resampled imported vegetation v1 JSON.
+- A viewer bundle ZIP containing its manifest and the currently available runtime
+  scenery, vegetation, and catalogue documents.
+
+The viewer bundle deliberately does not embed the final terrain, GLB models, textures,
+or other asset binaries. See
+[the runtime export/importer guide](docs/RUNTIME_EXPORT_IMPORTER_GUIDE.md) for the
+complete consumer contract.
+
+Application version numbers and data-schema versions are independent. Version 2.0.0
+of the editor currently saves project schema v4 and exports runtime scenery schema v3.
+
+## Requirements
+
+- Node.js 20.19 or newer.
+- pnpm 11.19.0 is recommended for reproducible installation from the tracked lockfile.
+- A current desktop browser with WebGL support.
+- Git, if cloning instead of downloading a source archive.
+
+The production application is static. It requires an HTTP server but no application
+backend.
+
+## Run on Windows
+
+Open PowerShell:
 
 ```powershell
-npm install
-npm run dev
+git clone https://github.com/countfuzzball/3JPCS.git
+cd 3JPCS
+
+corepack enable
+corepack prepare pnpm@11.19.0 --activate
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-For the production build, run `npm run build` followed by `npm run preview` and open
-the HTTP URL Vite prints. Do not open `dist/index.html` directly through `file://`;
-browser JavaScript modules require an HTTP origin and the correct JavaScript MIME
-type.
+Open the local URL printed by Vite, normally
+[http://localhost:5173](http://localhost:5173).
 
-## Python/Tkinter reference v0.2
+If `corepack` is unavailable, install the same pnpm version with npm:
 
-A standalone Python/Tkinter editor for composing engine-agnostic human scenery over
-an existing Polygon County terrain. It loads the Terrain Editor's float32 NPY as an
-immutable base, derives a separate in-memory working surface from per-object terrain
-pads, and exports viewer-ready terrain and semantic scenery without overwriting any
-source file. The complete preserved implementation, schemas, and compatibility tests
-now live under [`python_reference/`](python_reference/README.md); the Three.js build
-does not import or execute them.
+```powershell
+npm install --global pnpm@11.19.0
+```
 
-## Run
+If PowerShell reports that `node`, `npm`, or `corepack` is not recognized after
+installing Node.js, close and reopen the terminal so that it receives the updated
+`PATH`.
 
-Python 3.10 or newer is required.
+## Run on Linux
+
+Open a terminal:
+
+```bash
+git clone https://github.com/countfuzzball/3JPCS.git
+cd 3JPCS
+
+corepack enable
+corepack prepare pnpm@11.19.0 --activate
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open the local URL printed by Vite, normally
+[http://localhost:5173](http://localhost:5173).
+
+If your Node.js installation does not include Corepack:
+
+```bash
+npm install --global pnpm@11.19.0
+```
+
+## Create and edit a project
+
+1. Start the development server or production preview.
+2. Choose **File → New Scenery Project**.
+3. Select the source float32 NPY and matching terrain descriptor.
+4. Load an asset catalogue if you want resolved prefab previews.
+5. Import any optional county or large vegetation reference data.
+6. Draw or generate scenery, inspect the preview, and bake the accepted results.
+7. Save the editable project JSON.
+8. Export the final terrain and required runtime documents for your viewer.
+
+Basic viewport controls:
+
+- Mouse wheel: zoom around the cursor.
+- Middle- or right-drag: pan.
+- `F`: fit the terrain in the viewport.
+- `Enter` or double-click: finish a drawn geometry.
+- `Backspace`: remove the latest draft point.
+- `Escape`: cancel the current draft or placement mode.
+- `Delete`: delete the selected object.
+- `Shift+Delete`: delete a selected geometry vertex where valid.
+- `Ctrl`-click a selected road or hedgerow segment: insert a point.
+- `Q` / `E`: rotate a selected prefab or vegetation instance.
+
+The **Place prefab** and **Place vegetation** controls are toggle tools. While enabled,
+each click places another instance of the current selection. Toggling the active tool
+off returns to selection mode; enabling one placement tool disables the other.
+
+Generated settlement, route, frontage, and county results remain non-mutating previews
+until explicitly baked. County baking is atomic, so one undo removes the complete
+generated build.
+
+## Build for production
+
+The commands are the same on Windows PowerShell and Linux:
+
+```text
+pnpm install --frozen-lockfile
+pnpm build
+pnpm preview
+```
+
+The production files are written to `dist/`. Open the HTTP URL printed by the preview
+server, normally [http://localhost:4173](http://localhost:4173).
+
+For static deployment, upload the contents of `dist/` to an HTTP server or static
+hosting service. Asset URLs are generated relative to the deployment directory, so
+the build can be hosted at the domain root or beneath a path such as
+`/polygon-county/`.
+
+Do not open `dist/index.html` directly through `file://`. Browsers require an HTTP
+origin and correct JavaScript MIME types for ES modules. Opening the file directly, or
+using a host that rewrites missing JavaScript assets to an HTML fallback page, can
+produce errors such as:
+
+```text
+Loading module was blocked because of a disallowed MIME type ("text/html")
+```
+
+## Tests and verification
+
+Run the static checks, unit tests, and production build:
+
+```text
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Install Playwright's Chromium browser once, then run the browser workflows:
+
+### Windows
+
+```powershell
+pnpm exec playwright install chromium
+pnpm test:browser
+```
+
+### Linux
+
+```bash
+pnpm exec playwright install --with-deps chromium
+pnpm test:browser
+```
+
+The browser tests run against the production `dist/`, so run `pnpm build` first.
+The current verification baseline is 170 Vitest tests and 10 Playwright workflows.
+
+Run the deterministic full-scene performance benchmark with:
+
+```text
+pnpm benchmark
+```
+
+## Optional Python/Tkinter reference
+
+The original v0.2 editor is preserved in
+[`python_reference/`](python_reference/README.md). It has its own dependencies and
+does not participate in the TypeScript build.
+
+### Windows
 
 ```powershell
 cd python_reference
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
+
+Run its compatibility tests with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+### Linux
+
+```bash
+cd python_reference
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements.txt
 python main.py
-# or: python -m scenery_editor
 ```
 
-Choose **File → New Scenery Project**, then select the source float32 NPY and its
-matching terrain descriptor. Load the viewer's authoritative
-`public/assets/catalog.json`, or `examples/asset_catalog.json` to inspect the format.
-The same minimal schema-v3 catalogue supplies `asset_id`, category, and resource to
-both editor and viewer; it is not duplicated into runtime scenery.
+Run its compatibility tests with:
 
-## Authoring controls
-
-- Mouse wheel zooms around the cursor; middle- or right-drag pans; `F` fits terrain.
-- Drawing tools add world-space X/Z points. `Enter` or double-click finishes,
-  `Backspace` removes the latest point, and `Escape` cancels.
-- Select/Move exposes vertex handles. Drag a handle or whole object to edit it.
-- `Ctrl`-click a selected road or hedgerow segment to insert a point.
-- `Delete` deletes an object; `Shift+Delete` deletes a selected vertex where valid.
-- `Q`/`E` rotate a selected prefab by 15 degrees.
-- Native vegetation uses the same select/drag/delete/lock workflow. Choose a vegetation
-  type and logical species/asset ID, then use **Place vegetation**; `Q`/`E` rotates it.
-- A prefab's Properties panel controls terrain-pad enabled state, width, depth, and
-  blend distance, or resets them to a disabled placement default.
-- **Settlement survey** ranks deterministic town, village, hamlet-sized, or farm sites
-  over the working terrain. Its previews are non-mutating; selected candidates bake as
-  ordinary editable 32-point place regions in one undoable action.
-- **Route road** snaps optional endpoints to visible native roads, searches a copied
-  working-terrain snapshot in a module worker, and previews route diagnostics before
-  baking one ordinary editable road in one undoable action.
-- **Populate settlement** clips selected native roads to one selected place, previews
-  safe and skipped house footprints with junction/slope/collision diagnostics, and
-  bakes the accepted houses as ordinary editable prefabs in one undoable action.
-
-Prefab yaw uses `rotation_deg == 0` facing world north (`-Z`), with positive rotation
-clockwise from above. Terrain-pad width is local X and depth is local Z at zero yaw.
-
-## Terrain-pad behavior
-
-Each enabled, visible prefab can flatten a rotated rectangular site. Its target is the
-immutable base-terrain height at the prefab origin. The core is flat and the outer
-`blend_m` area uses a smooth transition into the current working surface. Pads compose
-in stable project order; overlapping pads are therefore deterministic.
-
-Pad participation is cell-aware. A 20 m × 20 m house on a 50 m terrain grid still
-affects the intersected cell and does not produce a resolution warning. The imported
-NPY remains read-only; undo/redo and edits rebuild a derived float32 copy.
-
-Hidden prefabs and disabled pads do not modify working terrain. Terrain padding never
-removes vegetation. The vegetation exporter preserves every imported placement and
-only resamples its final `terrain_y_m`.
-
-## Exports
-
-- **Viewer bundle (.zip)** writes a versioned bundle manifest, runtime scenery v3,
-  and—when loaded—the resampled vegetation v1 document and asset catalogue v3. The
-  bundle preserves those independent schemas; it does not contain final terrain,
-  editable project data, GLBs, textures, or other asset binaries.
-- **Export Final Terrain PNG + Metadata** writes an unsigned 16-bit greyscale PNG and
-  a same-stem JSON descriptor. The descriptor follows the Terrain Editor's current
-  importer-facing heightmap metadata contract.
-- **Export Resampled Vegetation** writes vegetation schema v1 with unchanged X/Z,
-  type, species, rotation, scale, and region identity, plus fresh working-terrain Y.
-- **Export Runtime Scenery v3** writes prefabs and native vegetation with logical
-  `asset_id`, transform, visibility, asset status, and derived working-terrain Y. A
-  separate legacy-v2 action requires explicit confirmation before omitting nonempty
-  native vegetation. No catalogue path, GLB path, lock, pad, or renderer state is
-  exported.
-
-GLBs are expected to be authoring-correct: metres, Y up, local -Z forward, scale 1.0,
-and a ground-ready pivot. Fix a nonconforming asset itself; neither editor nor viewer
-stores yaw, pivot, or unit corrections.
-
-The runtime JSON Y values come from the float32 working surface before PNG
-quantization, so small centimetre-scale differences from heights decoded out of the
-16-bit PNG are normal and bounded by that PNG's vertical quantization step.
-
-## Architecture
-
-`python_reference/scenery_editor/model` owns immutable authored records, terrain
-queries, validation, and working-terrain composition. `project_io` owns strict imports,
-migration, persistence, and final/runtime exports. `rendering` builds 2D terrain
-previews. `app` owns Tk widgets and transient gestures. Models and I/O do not import
-Tkinter.
-
-See [docs/SCENERY_FORMATS.md](docs/SCENERY_FORMATS.md) for the v2 contracts and
-[docs/RUNTIME_EXPORT_IMPORTER_GUIDE.md](docs/RUNTIME_EXPORT_IMPORTER_GUIDE.md) for the
-self-contained viewer/importer guide.
-
-## Tests
-
-```powershell
-cd python_reference
+```bash
 python -m pytest -q
 ```
 
-## Deliberately deferred
+Some Linux distributions package Tkinter separately; for example, Debian and Ubuntu
+users may need the `python3-tk` package.
 
-Vegetation clearance/exclusion around objects, custom pad target elevations, terrain
-brushes, road deformation, procedural settlement/farm/base generation, automatic
-frontage population in the Tk prototype, generated crops/livestock, road or hedge
-meshes, direct GLB/3D rendering, and engine-specific integration remain outside v0.2.
+## Repository layout
+
+```text
+src/app/          application composition and editor state
+src/model/        authored entities, validation, migrations, and coordinates
+src/history/      delta-based commands and undo/redo
+src/io/           project persistence, imports, exports, and viewer bundles
+src/terrain/      immutable base terrain and derived working terrain
+src/rendering/    Three.js projections and GPU vegetation batches
+src/interaction/  navigation, picking, editing, frontage, and placement logic
+src/generation/   survey, A* routing, frontage, and county generation
+src/workers/      background routing and county-build workers
+src/schemas/      versioned JSON schema snapshots
+tests/            unit, contract, benchmark, and Playwright browser tests
+docs/             format guides and implementation milestone records
+examples/         example descriptors, catalogues, and scenery documents
+scripts/          fixture and benchmark tooling
+python_reference/ preserved Python/Tkinter reference implementation
+```
+
+## Further documentation
+
+- [Three.js rewrite architecture and implementation record](README_THREEJS_REWRITE.md)
+- [Scenery format overview](docs/SCENERY_FORMATS.md)
+- [Runtime export/importer guide](docs/RUNTIME_EXPORT_IMPORTER_GUIDE.md)
+- [Settlement automation milestones](docs/SETTLEMENT_AUTOMATION_MILESTONE_PLAN.md)
+- [Settlement-network automation milestones](docs/SETTLEMENT_NETWORK_AUTOMATION_PLAN.md)
+- [Milestone 5 performance benchmark](docs/MILESTONE_5_BENCHMARK.md)
 
 ## License
 
