@@ -211,7 +211,7 @@ pnpm test:browser
 ```
 
 The browser tests run against the production `dist/`, so run `pnpm build` first.
-The current verification baseline is 170 Vitest tests and 10 Playwright workflows.
+The current verification baseline is 174 Vitest tests and 10 Playwright workflows.
 
 Run the deterministic full-scene performance benchmark with:
 
